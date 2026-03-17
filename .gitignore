@@ -34,6 +34,8 @@ slurm-*.out
 # data files
 *.h5
 *.hdf5
+*.png
+*.svg
 *.parquet
 *.npy
 *.npz
@@ -113,7 +115,7 @@ NHBE_*
 analysis/score/
 
 # utility scripts - not part of public repo
-scripts/
+/scripts/
 
 # publication prep tracking
 CHANGELOG.md
@@ -138,6 +140,12 @@ CHANGELOG.md
 
 # specific analysis data
 !analysis/fine_map/tabix_ftp_paths.tsv
+
+# reporter assay scripts
+!analysis/reporter_assays/scripts/score_*.py
+!analysis/reporter_assays/mfass/prepare_dataset.py
+!analysis/reporter_assays/vex_seq/prepare_dataset.py
+analysis/reporter_assays/scripts/*.sbatch
 
 # model weights to track (cls + reg, no sigmoid)
 !models/*_cls_best.keras
