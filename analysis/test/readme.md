@@ -7,6 +7,7 @@ score test-set donors with all models and compute metrics
 ```bash
 conda env create -f envs/splaire_env.yml
 conda activate splaire_env
+export SPLAIRE_CONDA_ENV=$(conda info --base)/envs/splaire_env
 ```
 
 set paths for all commands below
@@ -96,6 +97,44 @@ ${OUT}/${tissue}/ml_out_var/predictions/
 └── ...
 ```
 
+## scoring your own model
+
+each scoring script reads an h5 file and writes a parquet with predictions. to add your own model, write a script that produces a parquet with these columns:
+
+**required columns** (ground truth + coordinates, same for all models):
+
+| column | type | description |
+|---|---|---|
+| chrom | int8 | chromosome (1-22, X=23, Y=24) |
+| pos | int32 | genomic position |
+| strand | int8 | 0=minus, 1=plus |
+| y_acceptor | float32 | true acceptor label (0 or 1) |
+| y_donor | float32 | true donor label (0 or 1) |
+| y_ssu | float32 | true splice site usage (0-1, 777=missing) |
+
+**prediction columns** (model-specific, at least one):
+
+| column | type | what it means |
+|---|---|---|
+| acceptor | float32 | predicted acceptor probability |
+| donor | float32 | predicted donor probability |
+| ssu | float32 | predicted splice site usage |
+
+the filename must end with a suffix that identifies the model: `{donor_name}_{suffix}.parquet`
+
+to register it with `compute_metrics.py`, add an entry to the `models` dict at the top of `src/compute_metrics.py`:
+
+```python
+models = {
+    ...
+    "_mymodel": ("my_model", ["acceptor", "donor"]),
+}
+```
+
+the dict key is the filename suffix, the value is `(display_name, list_of_prediction_columns)`.
+
+see `src/score_spliceai.py` for a minimal example.
+
 ## compute metrics
 
 ```bash
@@ -111,6 +150,25 @@ for tissue in brain_cortex whole_blood testis lung haec10; do
     done
 done
 ```
+
+## scoring only your model (skip others)
+
+you can either comment out the other models in `score.sbatch` and add your own, or run your scoring script directly on the individual h5 files:
+
+```bash
+cd ${REPO}/analysis/test
+
+for tissue in brain_cortex whole_blood testis lung haec10; do
+    for h5 in ${OUT}/${tissue}/ml_data_var/individual/*.h5; do
+        name=$(basename "$h5" .h5)
+        out_dir=${OUT}/${tissue}/ml_out_var/predictions/${name}
+        mkdir -p ${out_dir}
+        python src/score_mymodel.py ${h5} ${out_dir}/${name}_mymodel.parquet
+    done
+done
+```
+
+then run `compute_metrics.py` as above. it will only compute metrics for models whose parquet files exist in the predictions directory.
 
 ## benchmarks
 

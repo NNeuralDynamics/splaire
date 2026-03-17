@@ -1,5 +1,5 @@
 samples:
-  test_file: /projects/talisman/mrunyan/paper/splaire/pipeline/configs/haec/haec10_test.txt
+  test_file: ${projectDir}/configs/haec/haec10_test.txt
 
 chromosomes:
   test:
