@@ -4,12 +4,9 @@ score test-set donors with all models and compute metrics
 
 ## setup
 
-install conda env and nextflow
-
 ```bash
 conda env create -f envs/splaire_env.yml
 conda activate splaire_env
-conda install -c bioconda nextflow bedtools samtools
 ```
 
 set paths for all commands below
