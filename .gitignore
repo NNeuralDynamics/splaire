@@ -1,0 +1,158 @@
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+
+# environments
+.venv/
+venv/
+ENV/
+env/
+
+# jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# ide / os
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.Rhistory
+
+# logs
+*.log
+logs/
+slurm-*.out
+
+# data files
+*.h5
+*.hdf5
+*.parquet
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.csv
+*.tsv
+*.tsv.gz
+*.txt
+*.xlsx
+*.html
+*.Rmd
+*.pdf
+
+# genomics
+*.fa
+*.fa.gz
+*.fai
+*.fasta
+*.gtf
+*.gtf.gz
+*.bam
+*.bam.bai
+*.vcf
+*.vcf.gz
+*.vcf.gz.tbi
+*.bed
+*.bedGraph
+*.bigWig
+*.junc
+
+# model weights
+*.pt
+*.pth
+*.ckpt
+*.keras
+*.onnx
+checkpoints/
+
+# nextflow
+.nextflow/
+.nextflow.log*
+work/
+results/
+
+# pipeline generated
+pipeline/STAR_index/
+pipeline/out/
+pipeline/logs/
+pipeline/work/
+
+# deprecated / archive
+**/deprecated/
+**/archive/
+**/old/
+
+# temp / scratch
+temp_*
+scratch/
+tmp/
+samples/
+vcf_files/
+
+# secrets
+.env
+*.pem
+*.key
+credentials.json
+
+# phenotype data - do not include in public repo
+NHBE_*
+
+# sample files (canonical copies in pipeline/configs/)
+*_samples.tsv
+
+# superseded by analysis/test/
+analysis/score/
+
+# utility scripts - not part of public repo
+scripts/
+
+# publication prep tracking
+CHANGELOG.md
+
+# ---- EXCEPTIONS ----
+
+# config text files and samplesheets in pipeline
+!pipeline/configs/**/*.txt
+!pipeline/configs/**/*.tsv
+
+# readme files
+!readme.md
+!**/readme.md
+
+# key analysis notebooks
+!analysis/figures.ipynb
+!analysis/reporter_assays/reporter_assays.ipynb
+!analysis/sqtl_bench/sqtl_benchmark_analysis.ipynb
+!analysis/explain/analysis.ipynb
+!analysis/dists/dists.ipynb
+!analysis/test/figures_v2.ipynb
+
+# specific analysis data
+!analysis/fine_map/tabix_ftp_paths.tsv
+
+# model weights to track (cls + reg, no sigmoid)
+!models/*_cls_best.keras
+!models/*_reg_best.keras
+
+# models/ — ignore scripts for now
+models/*.py
+
+# pipeline — ignore for now
+pipeline/scripts/
+pipeline/splaire_data.yml
+pipeline/configs/splits_config.template.yaml
+
+# pipeline reference — only track specific files
+!pipeline/reference/GRCh38/getReference.py
+!pipeline/reference/GRCh38/paralogs_GRCh38.txt.gz
+pipeline/reference/GRCh38/gencode.v45.rRNA.interval_list
+pipeline/reference/GRCh38/gencode.v45.refFlat.txt.bak
