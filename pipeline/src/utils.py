@@ -1,11 +1,4 @@
-"""
-encoding utilities for converting genomic sequences and splice annotations to ml-ready arrays.
-
-supports multiple encoding modes:
-- basic: standard ACGTN one-hot encoding, 4-dim labels (class + ssu)
-- het: includes IUPAC heterozygous codes (M,R,W,S,Y,K), 4-dim labels
-- pop: standard encoding with population-level labels (class + ssu + pop_ssu + delta)
-"""
+"""sequence and splice annotation encoding for ml"""
 
 import numpy as np
 from math import ceil
@@ -68,26 +61,22 @@ BASE_COMP = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A', 'N': 'N'}
 
 
 def ceil_div(x, y):
-    """integer ceiling division"""
     return int(ceil(float(x) / y))
 
 
 def parse_int_list(x):
-    """parse comma-separated string of ints, e.g. '100,200' -> [100, 200]"""
     if not x:
         return []
     return [int(v) for v in x.split(',') if v.strip()]
 
 
 def parse_float_list(x):
-    """parse comma-separated string of floats, e.g. '0.5,1.2' -> [0.5, 1.2]"""
     if not x:
         return []
     return [float(v) for v in x.split(',') if v.strip()]
 
 
 def normalize_chrom(chrom):
-    """convert chromosome string to int, X=23, Y=24"""
     if isinstance(chrom, str) and chrom.startswith('chr'):
         chrom = chrom[3:]
     if chrom == 'X':
@@ -98,23 +87,11 @@ def normalize_chrom(chrom):
 
 
 def seq_to_int_array(seq, mode='basic'):
-    """
-    convert sequence string to integer array.
-
-    mode='basic': uses ACGTN mapping (0-4)
-    mode='het': uses ACGTN + IUPAC het codes (0-10)
-    """
     char_map = CHAR_TO_IDX_HET if mode == 'het' else CHAR_TO_IDX_BASIC
     return np.array([char_map.get(ch, 0) for ch in seq.upper()], dtype='int8')
 
 
 def reverse_complement_int(x0, mode='basic'):
-    """
-    reverse complement an integer-encoded sequence.
-
-    for basic mode: (5 - x[::-1]) % 5 swaps A<->T and C<->G
-    for het mode: need to complement IUPAC codes properly
-    """
     if mode == 'basic':
         return (5 - x0[::-1]) % 5
 
@@ -137,24 +114,11 @@ def reverse_complement_int(x0, mode='basic'):
 
 
 def one_hot_encode(xd, yd, mode='basic'):
-    """one-hot encode integer sequence array"""
     in_map = IN_MAP_HET if mode == 'het' else IN_MAP_BASIC
     return in_map[xd.astype('int8')], yd
 
 
 def reformat_data(x0, y0, gc_y=None):
-    """
-    split sequence and labels into fixed-length blocks.
-
-    x0: integer-encoded sequence array
-    y0: label array with shape (seq_len, n_dims)
-    gc_y: optional list of genomic coordinate tuples
-
-    returns blocks of shape:
-    - xd: (n_blocks, SL + CL_max)
-    - yd: (n_blocks, SL, n_dims)
-    - gcd: (n_blocks, SL) if gc_y provided, else None
-    """
     n_dims = y0.shape[1] if y0.ndim > 1 else 4
     num_points = ceil_div(len(y0), SL)
 
@@ -204,27 +168,6 @@ def create_datapoints(
     var_alt=None,
     var_bin=None,
 ):
-    """
-    process genomic sequence and splice annotations into ml-ready arrays.
-
-    args:
-        seq: raw sequence string
-        strand: '+' or '-'
-        tx_start, tx_end: transcript coordinates
-        jn_start, jn_end: lists containing comma-separated junction positions
-        jn_start_sse, jn_end_sse: lists containing comma-separated SSU values
-        chrom: chromosome string (e.g. 'chr1')
-        name: unique identifier
-        remove_missing: if true, treat SSU==777 as no splice site
-        mode: 'basic', 'het', or 'pop'
-        jn_*_pop, jn_*_delta: population-level SSU values (for mode='pop')
-        var_*: variant info for heterozygous encoding (for mode='het')
-
-    returns:
-        X: one-hot encoded sequences, shape (n_blocks, SL+CL_max, 4)
-        Y: labels, shape (n_blocks, SL, n_dims) where n_dims is 4 or 6
-        GC: genomic coordinates, shape (n_blocks, SL)
-    """
     seq = seq.upper()
     tx_start = int(tx_start)
     tx_end = int(tx_end)

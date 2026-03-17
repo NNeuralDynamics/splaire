@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""
-build splice site usage (SSU) matrix from SpliSER-annotated TSVs.
-
-combines two steps:
-  1. collect fractions from all sample TSVs into raw matrix
-  2. convert fractions to decimals, mask low-coverage, add metadata
-
-outputs both raw (fraction) and processed (decimal) matrices.
-"""
+"""build SSU matrix from SpliSER-annotated TSVs"""
 import os
 import glob
 import argparse
@@ -19,7 +11,7 @@ from tqdm import tqdm
 
 
 def process_file(file_path):
-    """extract fraction column from one sample's annotated TSV"""
+    """extract fraction column from one sample"""
     # infer sample name from parent folder
     sample = os.path.basename(os.path.dirname(os.path.dirname(file_path)))
     df = pd.read_csv(file_path, sep="\t")
@@ -54,14 +46,14 @@ def process_file(file_path):
 
 
 def build_raw_matrix(directory, suffix, output_file):
-    """step 1: collect all samples into raw fraction matrix"""
+    """collect all samples into raw fraction matrix"""
     pattern = os.path.join(directory, "*", "spliser", f"*{suffix}")
     files = glob.glob(pattern)
     if not files:
         print(f"[ERROR] no files found: {pattern}")
         return None
 
-    print(f"[step 1] building raw matrix from {len(files)} samples")
+    print(f"building raw matrix from {len(files)} samples")
 
     with Pool(min(cpu_count(), len(files))) as pool:
         results = list(tqdm(pool.imap(process_file, files), total=len(files), desc="  collecting"))
@@ -74,7 +66,7 @@ def build_raw_matrix(directory, suffix, output_file):
 
 
 def _convert_chunk(args):
-    """convert a chunk of fraction strings to decimal values"""
+    """fraction strings to decimals"""
     chunk, denom_thresh = args
     parts = np.char.partition(chunk, '/')
     num = parts[..., 0].astype(float)
@@ -92,8 +84,8 @@ def _convert_chunk(args):
 
 
 def process_matrix(raw_matrix_file, processed_matrix_file, denom_thresh):
-    """step 2: convert fractions to decimals, mask low coverage, add metadata"""
-    print(f"[step 2] processing matrix (denom_thresh={denom_thresh})")
+    """fractions to decimals, mask low coverage, add metadata"""
+    print(f"processing matrix (denom_thresh={denom_thresh})")
 
     raw = pd.read_csv(raw_matrix_file, sep="\t", index_col=0, dtype=str)
 
@@ -168,10 +160,7 @@ def main():
     raw_out = args.output
     processed_out = f"processed_{args.output}"
 
-    # step 1: build raw matrix
     build_raw_matrix(args.directory, args.suffix, raw_out)
-
-    # step 2: process matrix
     process_matrix(raw_out, processed_out, args.denom_thresh)
 
     print("[done]")

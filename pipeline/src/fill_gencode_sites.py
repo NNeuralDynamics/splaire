@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""fill missing GENCODE splice sites with SSU=777.0
-
-Phase 1: For each existing row, append missing GENCODE positions within gene region
-Phase 2: Create "holder" rows for genes with completely unused GENCODE positions
-
-This matches the original data preparation from annotated_sites.ipynb.
-"""
+"""fill missing GENCODE splice sites with SSU=777.0"""
 import pandas as pd
 import argparse
 from collections import defaultdict
@@ -13,7 +7,7 @@ from tqdm import tqdm
 
 
 def load_gencode_exons(gtf_path):
-    """load TSL=1 protein-coding exon positions by gene"""
+    """TSL=1 protein-coding exon positions by gene"""
     gtf = pd.read_csv(
         gtf_path, sep="\t", comment="#", header=None,
         names=["seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute"],
@@ -40,20 +34,17 @@ def load_gencode_exons(gtf_path):
 
 
 def load_paralogs(paralogs_file):
-    """load paralog gene IDs"""
     par = pd.read_csv(paralogs_file, sep="\t", dtype=str)
     return set(par["Gene stable ID"].dropna())
 
 
 def parse_list(val):
-    """parse comma-separated string to list"""
     if pd.isna(val) or not str(val).strip():
         return []
     return [x.strip() for x in str(val).split(",") if x.strip()]
 
 
 def fill_row(row, gencode_positions, used_by_gene):
-    """append missing GENCODE positions with SSU=777.0"""
     gene = row["Gene_ID"]
     if gene not in gencode_positions:
         return row
@@ -114,8 +105,8 @@ def main():
     df = pd.read_csv(args.input, sep="\t", dtype=str)
     columns = list(df.columns)
 
-    # Phase 1: fill existing rows
-    print("Phase 1: filling existing rows...")
+    # fill existing rows
+    print("filling existing rows...")
     used_by_gene = defaultdict(lambda: {"starts": set(), "ends": set()})
     filled = []
     n_filled = 0
@@ -125,10 +116,10 @@ def main():
         if len(parse_list(row["exon_starts"])) > orig_starts:
             n_filled += 1
         filled.append(row)
-    print(f"Phase 1: filled {n_filled} rows")
+    print(f"filled {n_filled} rows")
 
-    # Phase 2: create holder rows for genes with unused GENCODE positions
-    print("Phase 2: creating holder rows...")
+    # holder rows for genes with unused GENCODE positions
+    print("creating holder rows...")
     holder_rows = []
     for gene, gc in tqdm(gencode.items(), desc="genes"):
         used = used_by_gene.get(gene, {"starts": set(), "ends": set()})
@@ -156,7 +147,7 @@ def main():
         holder["exon_end_SSUs"] = ",".join(["777.0"] * len(miss_ends))
         holder_rows.append(holder)
 
-    print(f"Phase 2: created {len(holder_rows)} holder rows")
+    print(f"created {len(holder_rows)} holder rows")
 
     df_out = pd.concat([pd.DataFrame(filled), pd.DataFrame(holder_rows)], ignore_index=True)
     df_out.to_csv(args.output, sep="\t", index=False)

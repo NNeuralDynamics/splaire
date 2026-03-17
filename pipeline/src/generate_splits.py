@@ -9,7 +9,6 @@ import yaml
 
 
 def expand_path(path, project_dir):
-    """expand ${projectDir} in path strings"""
     if not path:
         return path
     return path.replace("${projectDir}", project_dir)

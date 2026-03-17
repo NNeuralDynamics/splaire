@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""
-Reproduce the pick_samples*.ipynb workflow using a YAML configuration.
-
-The canonical configuration now lives inside ``pipeline/nextflow.config`` under
-``params.sample_selection_config_yaml``.  This script can still ingest a
-standalone YAML file via ``--config`` for ad-hoc experiments, but publication
-runs should invoke it as ``python sample_selection.py --nextflow-config
-pipeline/nextflow.config`` so that the per-paper selections stay in sync with
-Nextflow parameters.
-"""
+"""sample selection from YAML config"""
 
 from __future__ import annotations
 

@@ -1,50 +1,5 @@
 #!/usr/bin/env python3
-"""
-merge per-sample featureCounts outputs into gene expression matrices (raw, tpm, and
-median-of-ratios “mor” normalization).
-
-what this script does
----------------------
-- reads one or more featureCounts *.counts.txt files (single-sample format; multi-sample
-  tables are tolerated — the last non-annotation column is taken as the counts).
-- builds a unified raw counts matrix (genes × samples), filling missing genes with 0.
-- computes TPM using the featureCounts `Length` column (sum of exons per gene).
-- computes DESeq-style median-of-ratios (size-factor) normalized counts (“mor”).
-- optionally strips Ensembl version suffixes from gene IDs (e.g., ENSG...“.5”) with
-  `--strip-version`.
-- warns to stderr if gene lengths disagree across inputs.
-
-assumptions & notes
--------------------
-- all inputs were generated against the same GTF so gene `Length` is consistent.
-- files are tab-separated; header lines starting with `#` are ignored.
-- TPM is: counts / (length_kb) → per-sample scaling so columns sum to 1e6.
-- size factors are the median over genes of (count / geometric_mean_across_samples),
-  where the geometric mean ignores zeros via a log transform (log(0) treated as NaN).
-- no variance-stabilizing transform is applied here; if you need log2, do it downstream
-  (e.g., `log2(TPM+1)` or `log2(MOR+1)`).
-
-outputs
--------
-- expr_counts.tsv  : integer raw counts (genes × samples)
-- expr_tpm.tsv     : TPM matrix (float)
-- expr_mor.tsv     : median-of-ratios normalized counts (float)
-
-usage examples
---------------
-  build_expr_matrices.py --inputs results/**/featurecounts/*.counts.txt --strip-version
-  build_expr_matrices.py --inputs a.counts.txt b.counts.txt \
-      --counts-out expr_counts.tsv --tpm-out expr_tpm.tsv --mor-out expr_mor.tsv
-
-performance
------------
-loads all inputs into memory; for typical gene-level tables (~60k genes × tens/hundreds of
-samples) this is fine. for very large cohorts, consider chunking or parquet.
-
-exit status
------------
-returns 0 on success; non-zero on malformed inputs (e.g., missing columns).
-"""
+“””merge featureCounts outputs into raw, tpm, and mor matrices”””
 
 import argparse
 import os
@@ -79,12 +34,6 @@ def parse_args():
 
 
 def sample_name_from_path(path: str) -> str:
-    """
-    Derive a unique sample name from the file path.
-    Include the parent directory to avoid collisions when basenames repeat.
-
-    /.../DD064QP2/featurecounts/DD064QP2.counts.txt → DD064QP2__DD064QP2
-    """
     base = os.path.basename(path)
     base = re.sub(r"\.counts\.txt$", "", base, flags=re.IGNORECASE)
     parent = os.path.basename(os.path.dirname(path))
@@ -92,7 +41,6 @@ def sample_name_from_path(path: str) -> str:
 
 
 def read_one(path: str):
-    """Read a featureCounts file and return (sample_name, df[gene,length,count])."""
     df = pd.read_csv(path, sep="\t", comment="#", low_memory=False)
     if "Geneid" not in df.columns or "Length" not in df.columns:
         raise SystemExit(f"{path}: missing required columns Geneid/Length")

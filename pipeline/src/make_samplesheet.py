@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""
-create samplesheet from bam or fastq files with strandness and read length detection.
-
-usage:
-    # from directory of bams
-    python make_samplesheet.py --input-dir /path/to/bams/ --ref-bed ref.bed --output samples.tsv
-
-    # from directory of fastqs (paired-end)
-    python make_samplesheet.py --input-dir /path/to/fastqs/ --ref-bed ref.bed --output samples.tsv
-
-    # skip read length detection
-    python make_samplesheet.py --input-dir /path/to/bams/ --ref-bed ref.bed --output samples.tsv --skip-read-length
-"""
+"""create samplesheet from bam or fastq files"""
 import argparse
 import subprocess
 import sys
@@ -23,7 +11,6 @@ from tqdm import tqdm
 
 
 def get_read_length_from_bam(bam_path, num_reads=1000):
-    """get most common read length from bam file."""
     cmd = f"samtools view {bam_path} 2>/dev/null | head -{num_reads} | awk '{{print length($10)}}' | sort | uniq -c | sort -rn | head -1"
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0 or not result.stdout.strip():
@@ -35,7 +22,6 @@ def get_read_length_from_bam(bam_path, num_reads=1000):
 
 
 def get_read_length_from_fastq(fastq_path, num_reads=1000):
-    """get most common read length from fastq file."""
     cat_cmd = "zcat -f" if str(fastq_path).endswith('.gz') else "cat"
     lines_needed = num_reads * 4
     cmd = f"{cat_cmd} {fastq_path} 2>/dev/null | head -{lines_needed} | awk 'NR%4==2 {{print length}}' | sort | uniq -c | sort -rn | head -1"
@@ -49,17 +35,12 @@ def get_read_length_from_fastq(fastq_path, num_reads=1000):
 
 
 def get_strandness_from_bam(bam_path, ref_bed):
-    """infer strandness using infer_experiment.py from rseqc."""
     cmd = f"infer_experiment.py -r {ref_bed} -i {bam_path} 2>/dev/null"
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
         return None, result.stderr
 
-    # parse output to determine strandness
-    # example output:
-    # Fraction of reads failed to determine: 0.0000
-    # Fraction of reads explained by "1++,1--,2+-,2-+": 0.0100
-    # Fraction of reads explained by "1+-,1-+,2++,2--": 0.9900
+    # parse rseqc output
 
     output = result.stdout
     fr_match = re.search(r'Fraction of reads explained by "1\+\+,1--,2\+-,2-\+":\s*([\d.]+)', output)
@@ -88,7 +69,6 @@ def get_strandness_from_bam(bam_path, ref_bed):
 
 
 def extract_sample_id(filepath):
-    """extract sample id from filename."""
     name = Path(filepath).name
     # remove common suffixes
     for suffix in ['.Aligned.sortedByCoord.out.patched.md.bam', '.bam', '.sorted.bam',
@@ -102,9 +82,7 @@ def extract_sample_id(filepath):
 
 
 def extract_donor_id(sample_id):
-    """extract donor id from sample id (first part before tissue code)."""
-    # gtex format: GTEX-XXXXX-YYYY-SM-ZZZZZ
-    # donor is GTEX-XXXXX
+    # gtex format: GTEX-XXXXX-YYYY-SM-ZZZZZ → GTEX-XXXXX
     parts = sample_id.split('-')
     if len(parts) >= 2 and parts[0] == 'GTEX':
         return f"{parts[0]}-{parts[1]}"
@@ -112,7 +90,6 @@ def extract_donor_id(sample_id):
 
 
 def process_bam(bam_path, ref_bed, skip_read_length=False):
-    """process a single bam file."""
     sample_id = extract_sample_id(bam_path)
     donor_id = extract_donor_id(sample_id)
 
@@ -134,11 +111,10 @@ def process_bam(bam_path, ref_bed, skip_read_length=False):
 
 
 def process_fastq_pair(fastq_1, fastq_2, ref_bed, skip_read_length=False):
-    """process a fastq pair. note: strandness cannot be determined from fastq."""
     sample_id = extract_sample_id(fastq_1)
     donor_id = extract_donor_id(sample_id)
 
-    # cannot determine strandness from fastq - will be inferred after alignment
+    # strandness inferred after alignment
     strandness = "unknown"
 
     # get read length
@@ -157,7 +133,6 @@ def process_fastq_pair(fastq_1, fastq_2, ref_bed, skip_read_length=False):
 
 
 def find_files(input_dir):
-    """find bam or fastq files in directory."""
     input_path = Path(input_dir)
 
     # check for bams
@@ -192,7 +167,6 @@ def find_files(input_dir):
 
 
 def print_summary(samples, file_type):
-    """print summary of read lengths and strandness."""
     print("\n" + "=" * 50)
     print("SAMPLE INFO SUMMARY")
     print("=" * 50)

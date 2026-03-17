@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""
-Synchronize ``chroms_*.txt`` with the canonical definitions in nextflow.config.
-
-This replaces the manual editing step from the runbook.  Chromosomes for the
-train/valid/test cohorts now live under ``params.chromosome_splits_config_yaml``
-and this utility materializes those lists into the text files consumed by the
-Nextflow ML jobs.
-"""
+"""sync chroms_*.txt with nextflow.config definitions"""
 
 from __future__ import annotations
 

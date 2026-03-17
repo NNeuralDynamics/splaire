@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""
-extract phased variants from vcf for gene regions.
-
-consolidates 3 steps:
-  1. bedtools intersect vcf with gene regions
-  2. extract phased variants per gene (paternal/maternal)
-  3. filter to SNVs only
-
-outputs both full variants and SNV-only versions with detailed logging.
+"""extract phased variants from vcf for gene regions
 """
 import argparse
 import subprocess
@@ -42,7 +34,7 @@ def setup_logging(log_file):
 
 
 def intersect_vcf(vcf_path, bed_path, output_vcf):
-    """step 1: bedtools intersect vcf with gene regions"""
+    """bedtools intersect vcf with gene regions"""
     logging.info(f"intersecting VCF with gene regions BED")
     logging.info(f"  vcf: {vcf_path}")
     logging.info(f"  bed: {bed_path}")
@@ -128,7 +120,7 @@ def intersect_vcf(vcf_path, bed_path, output_vcf):
 
 
 def extract_phased_variants(vcf_path, genes_tsv, donor_id):
-    """step 2: extract phased variants per gene region"""
+    """extract phased variants per gene region"""
     logging.info(f"extracting phased variants for donor {donor_id}")
 
     vcf = pysam.VariantFile(vcf_path)
@@ -240,7 +232,7 @@ def extract_phased_variants(vcf_path, genes_tsv, donor_id):
 
 
 def filter_to_snvs(df):
-    """step 3: filter variants column to SNVs only"""
+    """filter variants to SNVs only"""
     logging.info("filtering to SNVs only")
 
     def keep_snvs(variants_str):
@@ -287,15 +279,15 @@ def main():
     logging.info(f"=== extract_variants.py ===")
     logging.info(f"donor: {args.donor}")
 
-    # step 1: intersect vcf with gene regions
+    # intersect vcf with gene regions
     with tempfile.TemporaryDirectory() as tmpdir:
         intersected_vcf = Path(tmpdir) / "intersected.vcf.gz"
         intersect_vcf(args.vcf, args.bed, intersected_vcf)
 
-        # step 2: extract phased variants
+        # extract phased variants
         df, stats = extract_phased_variants(intersected_vcf, args.genes, args.donor)
 
-    # step 3: filter to SNVs
+    # filter to SNVs
     df_snv = filter_to_snvs(df)
 
     # save outputs

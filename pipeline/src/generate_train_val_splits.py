@@ -15,7 +15,6 @@ import pandas as pd
 
 
 def is_autosomal(chrom):
-    """check if chromosome is autosomal (chr1-22)"""
     s = str(chrom).replace('chr', '')
     try:
         return 1 <= int(s) <= 22

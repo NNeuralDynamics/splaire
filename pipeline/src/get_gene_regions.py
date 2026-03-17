@@ -1,24 +1,5 @@
 #!/usr/bin/env python3
-"""
-Extract and process protein-coding gene regions from a GTF file.
-
-This script:
-- Parses a GTF annotation to extract only "transcript" entries with 
-  transcript_type "protein_coding".
-- Consolidates all transcripts per gene into a single interval 
-  (min start, max end).
-- Iteratively resolves overlaps on the same chromosome and strand by:
-    * Removing fully contained genes.
-    * Clipping the end or start of overlapping genes based on minimal 
-      fractional overlap.
-- Repeats overlap resolution until no changes occur, ensuring non‑overlapping 
-  gene regions.
-
-Outputs:
-- A TSV of final gene regions (Chromosome, Start, End, Gene_ID, Strand).
-- A BED file (no header) with the same columns.
-- A log file documenting each resolution pass and any modifications.
-"""
+"""extract non-overlapping protein-coding gene regions from GTF"""
 
 import pandas as pd
 import logging

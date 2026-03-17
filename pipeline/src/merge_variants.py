@@ -1,11 +1,9 @@
-# src/combine_txs.py
 import os
 import argparse
 import pandas as pd
 
 
 def combine_tsv_files(root_dir, suffix):
-    """combine all tsv files matching suffix, return as dataframe"""
     # allow suffix with or without ".tsv"
     suf = suffix[:-4] if suffix.endswith(".tsv") else suffix
     needle = f"{suf}.tsv"
@@ -27,7 +25,6 @@ def combine_tsv_files(root_dir, suffix):
 
 
 def add_paralog_status(df, paralog_file):
-    """add paralog_status column based on ensembl paralog data"""
     assert os.path.exists(paralog_file), f"paralogs file not found: {paralog_file}"
 
     # load paralog file, get set of genes with paralogs

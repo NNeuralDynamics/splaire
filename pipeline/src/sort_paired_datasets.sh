@@ -6,8 +6,8 @@ usage() {
 Usage: $0 -s SITES_FILE -q SEQS_FILE -o OUT_DIR
 
 Sort a pair of “sites” and “seqs” files so that:
-  1. The sites file is sorted by Gene_ID (column 1, tab-separated).
-  2. The seqs file is reordered to exactly match the Unique_ID order in the sorted sites.
+  - sites file is sorted by Gene_ID (column 1, tab-separated)
+  - seqs file is reordered to match the Unique_ID order in sorted sites
 
 Outputs in OUT_DIR:
   <basename>_sites_sorted.txt
@@ -37,16 +37,16 @@ sorted_sites="$OUTDIR/${base_sites}_sorted.txt"
 sorted_seqs="$OUTDIR/${base_seqs}_sorted.txt"
 ids_file="$OUTDIR/${base_sites}.ids.tmp"
 
-# 1) sort sites, preserving header
+# sort sites, preserving header
 {
   head -n1 "$SITES"
   tail -n+2 "$SITES" | sort -t$'\t' -k1,1
 } > "$sorted_sites"
 
-# 2) extract Unique_IDs (column 8 in the sites file)
+# extract Unique_IDs (column 8)
 tail -n+2 "$sorted_sites" | cut -f8 > "$ids_file"
 
-# 3) reorder seqs to match those IDs
+# reorder seqs to match
 awk -F, -v OFS=, '
   NR==FNR { ids[++n]=$1; next }       # read ids into array
   FNR==1  { print; next }             # print header of seqs file

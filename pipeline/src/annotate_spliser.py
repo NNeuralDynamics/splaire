@@ -6,10 +6,6 @@ import os
 AMBIGUOUS_TYPES = {"exon_start,both", "exon_end,exon_start,both", "exon_end,exon_start", "both"}
 
 def load_master_list(master_file):
-    """
-    Loads the master list from a TSV file with columns: Region, Site, Strand, SiteType.
-    Returns a dictionary keyed by (Region, Site, Strand) with value SiteType.
-    """
     try:
         master_df = pd.read_csv(master_file, sep="\t")
     except Exception as e:
@@ -21,7 +17,7 @@ def load_master_list(master_file):
         print(f"Error: Master list file {master_file} is missing required columns. Expected {required_columns}")
         return {}
     
-    # Ensure Site column is integer for consistent key matching
+    # cast to int for key matching
     master_df["Site"] = master_df["Site"].astype(int)
     master_dict = {}
     for _, row in master_df.iterrows():
@@ -30,21 +26,6 @@ def load_master_list(master_file):
     return master_dict
 
 def annotate_splice_sites(splice_df, master_dict):
-    """
-    For each splice site, looks up its classification directly in the master list 
-    (using the key: (Region, Site, Strand)). 
-    If the master list classification is ambiguous (i.e. one of the values in AMBIGUOUS_TYPES),
-    this function returns None for that row.
-    
-    Rows with None in the site_type will later be dropped.
-    
-    Args:
-        splice_df (pd.DataFrame): DataFrame with columns ["Region", "Site", "Strand", ...]
-        master_dict (dict): Dictionary mapping (Region, Site, Strand) to SiteType.
-    
-    Returns:
-        pd.DataFrame: Updated DataFrame with a new "site_type" column.
-    """
     def classify_site(row):
         key = (row["Region"], row["Site"], row["Strand"])
         classification = master_dict.get(key, None)
@@ -56,44 +37,17 @@ def annotate_splice_sites(splice_df, master_dict):
     return splice_df
 
 def adjust_splice_positions(annotated_df):
-    """
-    Adjusts splice site positions so that:
-      - Donor sites (exon ends) always represent the first base of the intron.
-      - Acceptor sites (exon starts) always represent the last base of the exon.
-      - Sites labeled as "both" remain unchanged.
-    
-    Args:
-        annotated_df (pd.DataFrame): DataFrame with "Site" and "site_type"
-    
-    Returns:
-        pd.DataFrame: Updated DataFrame with adjusted positions.
-    """
+    # donor = first intronic base, acceptor = last exonic base
     adjusted_df = annotated_df.copy()
     adjusted_df.loc[adjusted_df["site_type"] == "exon_start", "Site"] += 1
     return adjusted_df
 
 def filter_duplicates(df):
-    """
-    Removes any duplicate rows altogether. For each (Region, Site, Strand) group,
-    if there is more than one row the entire group is dropped. Only groups with exactly
-    one row (unique key) are kept.
-    
-    Returns the filtered DataFrame.
-    """
+    # drop duplicate (region, site, strand) groups
     filtered_df = df.groupby(["Region", "Site", "Strand"]).filter(lambda g: len(g) == 1)
     return filtered_df
 
 def save_log_file(out_filename, annotated_df, drop_stats, ambiguous_sites, duplicate_sites):
-    """
-    Saves a log file summarizing site counts and dropped sites.
-
-    Args:
-        out_filename (str): The base name of the output file (without extension)
-        annotated_df (pd.DataFrame): The DataFrame containing annotated sites.
-        drop_stats (dict): Counts of initial, ambiguous, duplicate, and final sites.
-        ambiguous_sites (pd.DataFrame): Sites dropped due to ambiguous classification.
-        duplicate_sites (pd.DataFrame): Sites dropped due to duplicate keys.
-    """
     log_filename = f"{out_filename}.log"
     site_counts = annotated_df["site_type"].value_counts(dropna=True).to_dict()
     strand_counts = annotated_df.groupby(["Strand", "site_type"]).size().unstack(fill_value=0)
@@ -139,15 +93,6 @@ def save_log_file(out_filename, annotated_df, drop_stats, ambiguous_sites, dupli
     print(f"Log file saved: {log_filename}")
 
 def main(input_file, master_file):
-    """
-    Reads a SpliSER TSV file, looks up each site's classification from the master list,
-    removes ambiguous rows (those with ambiguous classification) and duplicate groups,
-    adjusts the splice positions, and then saves the final output.
-
-    Args:
-        input_file (str): Path to the SpliSER TSV file.
-        master_file (str): Path to the master list TSV file.
-    """
     master_dict = load_master_list(master_file)
 
     try:

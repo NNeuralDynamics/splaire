@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
-"""
-filter empty transcripts (rows where either SSU column is all-777).
-
-transcripts with no valid splice site data (all low coverage or missing)
-are removed. run BEFORE fill_gencode_sites.py so GENCODE placeholders
-are only added to transcripts that have at least some real data.
-"""
+"""filter rows where either SSU column is all-777, run before fill_gencode_sites"""
 import argparse
 import pandas as pd
 
 
 def is_all_777(val):
-    """check if ALL values in SSU column are 777 (or empty)"""
     if pd.isna(val) or not isinstance(val, str) or not val.strip():
         return True
     parts = [x.strip() for x in str(val).split(",") if x.strip()]

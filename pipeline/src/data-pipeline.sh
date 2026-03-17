@@ -114,14 +114,13 @@ VAR_SITES="$INT_DIR/Var_${NAME}_sites.txt"
 REF_SEQ="$INT_DIR/Ref_${NAME}_seqs.txt"
 VAR_SEQ="$INT_DIR/Var_${NAME}_seqs.txt"
 
-# Step 1
 if [[ -n "$CHROM_FILE" ]]; then
   CHROM_ARG="--chrom-file $CHROM_FILE"
 else
   CHROM_ARG="--chrom $CHROM"
 fi
 
-echo "[$(date)] Step 1: select chromosomes & samples"
+echo "[$(date)] select chromosomes & samples"
 python select_chrom_and_sample.py \
   -i "$INPUT_TSV" $CHROM_ARG \
   -o "$REF_SITES"
@@ -130,12 +129,10 @@ python select_chrom_and_sample.py \
 #  -i "$INPUT_TSV" $CHROM_ARG \
 #  -s "$SAMPLE_FILE" -o "$REF_SITES"
 
-# Step 2
-echo "[$(date)] Step 2: adjust variant positions"
+echo "[$(date)] adjust variant positions"
 python adjust_sites.py -v "$REF_SITES" -a "$VAR_SITES"
 
-# Step 3
-echo "[$(date)] Step 3: extract & mutate sequences"
+echo "[$(date)] extract & mutate sequences"
 python mutate_sequences.py \
   -v "$REF_SITES" -a "$VAR_SITES" -f "$FASTA" \
   -o "$VAR_SEQ" -r "$REF_SEQ"

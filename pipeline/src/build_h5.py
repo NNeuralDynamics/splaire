@@ -76,11 +76,7 @@ def setup_logging(log_file):
 # -----------------------------------------------------------------------------
 
 def filter_vars(df, donor, min_count=1):
-    """filter variants: keep only donor's data, filter rare variants
-
-    NOTE: all-777 rows (holder rows from GENCODE filling) are now KEPT.
-    The model masks these in the loss but still learns from sequence context.
-    """
+    # keep all-777 rows, model masks them in loss
     initial = len(df)
 
     def only_empty(val):
@@ -89,7 +85,7 @@ def filter_vars(df, donor, min_count=1):
             return True
         return False
 
-    # only remove truly empty rows, keep all-777 rows (holder rows)
+    # remove empty rows, keep all-777
     mask_bad = df['exon_end_SSUs'].apply(only_empty) | df['exon_start_SSUs'].apply(only_empty)
     df = df.loc[~mask_bad].copy()
     logging.info(f"filter_vars: removed {mask_bad.sum()} empty rows, {len(df)} remain")
@@ -136,7 +132,7 @@ def filter_vars(df, donor, min_count=1):
 # -----------------------------------------------------------------------------
 
 def select_chrom_samples(df, chromosomes, donor, asymmetric_paralog=False):
-    """filter to specific chromosomes and donor.
+    """filter to chromosomes and donor
 
     if asymmetric_paralog=True, paralogs are kept from ALL chromosomes,
     only non-paralogs are filtered to specified chromosomes.
@@ -159,7 +155,7 @@ def select_chrom_samples(df, chromosomes, donor, asymmetric_paralog=False):
 # -----------------------------------------------------------------------------
 
 def adjust_row(row, var_counts):
-    """adjust transcript coordinates for variants (indels shift downstream positions)"""
+    """indels shift downstream positions"""
     tx_start = int(row["Start"])
     tx_end = int(row["End"])
     original_tx_start = tx_start
@@ -245,7 +241,7 @@ def adjust_sites(df):
 # -----------------------------------------------------------------------------
 
 def extract_sequences(df, fasta_path, is_reference=False):
-    """extract sequences from genome fasta and optionally apply variants"""
+    """extract and mutate sequences"""
     unique_id = uuid.uuid4().hex
     bed_file = f"temp_{unique_id}.bed"
     fasta_file = f"temp_{unique_id}.fasta"
@@ -355,7 +351,6 @@ CHUNK_SIZE = 2000
 
 
 def process_record(data1, data2, encoding_mode, remove_missing):
-    """process single record for h5 dataset"""
     # data1 = splice table row as list
     # data2 = sequence tuple (coords, sequence)
 
@@ -393,7 +388,6 @@ def process_record(data1, data2, encoding_mode, remove_missing):
 
 
 def create_dataset_h5(df, var_seqs, output_path, split_mode, paralog, encoding_mode, make_gc, remove_missing, skip_empty=False):
-    """build h5 dataset from dataframe and sequences"""
     logging.info(f"create_dataset: building h5 for {len(df)} records (skip_empty={skip_empty})")
 
     with h5py.File(output_path, 'w') as h5f:

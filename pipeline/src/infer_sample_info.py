@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""
-infer read length and strandness from bam or fastq files.
-
-usage:
-    python infer_sample_info.py sample.bam
-    python infer_sample_info.py sample_R1.fastq.gz
-"""
+"""infer read length and strandness from bam or fastq"""
 import argparse
 import subprocess
 import sys
@@ -13,7 +7,6 @@ from pathlib import Path
 
 
 def get_read_length_from_bam(bam_path, num_reads=1000):
-    """get most common read length from bam file."""
     cmd = f"samtools view {bam_path} | head -{num_reads} | awk '{{print length($10)}}' | sort | uniq -c | sort -rn | head -1"
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
@@ -26,7 +19,6 @@ def get_read_length_from_bam(bam_path, num_reads=1000):
 
 
 def get_read_length_from_fastq(fastq_path, num_reads=1000):
-    """get most common read length from fastq file."""
     # handle gzipped or plain fastq
     cat_cmd = "zcat -f" if str(fastq_path).endswith('.gz') else "cat"
     lines_needed = num_reads * 4

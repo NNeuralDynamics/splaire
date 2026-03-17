@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""
-Generate transcript-level splits based on the logic encoded in set_splits.ipynb
-and the mini-dataset experiments.
-
-The canonical configuration now lives inside ``pipeline/nextflow.config`` under
-``params.gene_split_config_yaml``.
-"""
+"""generate transcript-level splits from config"""
 
 from __future__ import annotations
 
