@@ -1,42 +1,42 @@
 # test
 
-> *Note: Shell commands and sbatch scripts reference paths on the Northeastern Explorer cluster. Adapt paths for your environment.*
+score test-set donors with all models and compute metrics
 
-score test-set donors with all models and compute metrics. includes benchmarks against gencode canonical sites, mane select, and pangolin test data.
+## setup
 
-## 0. download data
-
-download splice tables from Zenodo into a data directory:
-
-```
-<data_dir>/
-├── brain_cortex_splice_table.tsv
-├── whole_blood_splice_table.tsv
-├── testis_splice_table.tsv
-├── lung_splice_table.tsv
-└── haec10_splice_table.tsv
-```
-
-set these variables for all commands below
+install conda env and nextflow
 
 ```bash
-REPO=<path_to_repo>
-DATA=<data_dir>
+conda env create -f envs/splaire_env.yml
+conda activate splaire_env
+conda install -c bioconda nextflow bedtools samtools
+```
+
+set paths for all commands below
+
+```bash
+REPO=<path_to_cloned_repo>
+DATA=<dir_with_splice_tables>
 OUT=<output_dir>
 ```
 
-## 1. build individual h5 datasets
+`DATA` should contain the splice tables:
 
-build per-donor HDF5 files from splice tables
+```
+brain_cortex_splice_table.tsv
+whole_blood_splice_table.tsv
+testis_splice_table.tsv
+lung_splice_table.tsv
+haec10_splice_table.tsv
+```
+
+## build h5 datasets
+
+nextflow builds per-donor h5 files from the splice tables. one run per tissue.
 
 ```bash
-conda activate sp
-module load nextflow
-
-# gtex tissues
 for tissue in brain_cortex whole_blood testis lung; do
-    mkdir -p ${OUT}/${tissue}_run
-    cd ${OUT}/${tissue}_run
+    mkdir -p ${OUT}/${tissue}_run && cd ${OUT}/${tissue}_run
     nextflow run ${REPO}/pipeline/main.nf \
         -entry build_h5_only \
         --input_matrix ${DATA}/${tissue}_splice_table.tsv \
@@ -48,8 +48,7 @@ for tissue in brain_cortex whole_blood testis lung; do
 done
 
 # haec10
-mkdir -p ${OUT}/haec10_run
-cd ${OUT}/haec10_run
+mkdir -p ${OUT}/haec10_run && cd ${OUT}/haec10_run
 nextflow run ${REPO}/pipeline/main.nf \
     -entry build_h5_only \
     --input_matrix ${DATA}/haec10_splice_table.tsv \
@@ -60,9 +59,20 @@ nextflow run ${REPO}/pipeline/main.nf \
     -profile slurm
 ```
 
-## 2. individual predictions (per donor, all models)
+output tree per tissue:
 
-scores each donor's h5 with splaire, spliceai, pangolin, and splicetransformer.
+```
+${OUT}/${tissue}/ml_data_var/
+├── combined_test.h5
+└── individual/
+    ├── test_DONOR1.h5
+    ├── test_DONOR2.h5
+    └── ...
+```
+
+## score (per donor, all models)
+
+runs splaire, spliceai, pangolin, and splicetransformer on each donor h5
 
 ```bash
 cd ${REPO}/analysis/test
@@ -74,7 +84,22 @@ for tissue in brain_cortex whole_blood testis lung haec10; do
 done
 ```
 
-## 3. individual metrics (per donor)
+output tree per tissue:
+
+```
+${OUT}/${tissue}/ml_out_var/predictions/
+├── test_DONOR1/
+│   ├── test_DONOR1_splaire_ref.parquet
+│   ├── test_DONOR1_splaire_var.parquet
+│   ├── test_DONOR1_sa.parquet
+│   ├── test_DONOR1_pang.parquet
+│   └── test_DONOR1_spt.parquet
+├── test_DONOR2/
+│   └── ...
+└── ...
+```
+
+## compute metrics
 
 ```bash
 cd ${REPO}/analysis/test
@@ -90,172 +115,38 @@ for tissue in brain_cortex whole_blood testis lung haec10; do
 done
 ```
 
-## 4. gencode benchmark
+## benchmarks
 
-scores all TSL=1 protein-coding splice sites on test chromosomes. converts `data/canonical_dataset.txt` (from SpliceAI, hg19) → matrix → h5 → scores with all models → metrics, all in one sbatch.
+### gencode
 
-requires reference files in `pipeline/reference/GRCh38/` (genome FASTA, GTF, paralogs).
+scores all TSL=1 protein-coding splice sites on test chromosomes. uses `data/canonical_dataset.txt` (hg19 coordinates from SpliceAI).
+
+requires `pipeline/reference/GRCh38/` (genome FASTA, GTF, paralogs)
 
 ```bash
 cd ${REPO}/analysis/test
 sbatch score_gencode.sbatch ${OUT}/canonical/gencode
 ```
 
-## 5. mane select benchmark
+### mane select
 
-same as gencode but uses MANE Select transcripts. input is `data/canonical_dataset_mane_select_p.txt` (hg38, with paralog column).
+same but uses MANE Select transcripts. input is `data/canonical_dataset_mane_select_p.txt` (hg38)
 
 ```bash
-cd ${REPO}/analysis/test
 sbatch score_mane.sbatch ${OUT}/canonical/mane_select
 ```
 
-## 6. pangolin benchmark (per tissue)
+### pangolin
 
-uses pangolin's test splice table to compare models on tissue-specific splice sites.
-
-### setup — download pangolin test data
-
-the pangolin benchmark requires two files from [Pangolin_train](https://github.com/tkzeng/Pangolin_train). `paralogs.txt` is included in `data/`. download the splice table:
+uses pangolin's test splice table for tissue-specific comparison. download first:
 
 ```bash
 cd ${REPO}/analysis/test
 curl -L -o data/splice_table_Human.test.txt \
     https://raw.githubusercontent.com/tkzeng/Pangolin_train/main/preprocessing/splice_table_Human.test.txt
-```
-
-### run
-
-```bash
-cd ${REPO}/analysis/test
 
 for tissue in heart liver brain testis; do
     sbatch -J pang_${tissue} score_pangolin.sbatch \
         ${OUT}/canonical/pangolin $tissue
 done
 ```
-
-## 7. metrics only
-
-if predictions exist and you only need to recompute metrics:
-
-```bash
-cd ${REPO}/analysis/test
-
-# gencode
-sbatch metrics.sbatch \
-    ${OUT}/canonical/gencode/predictions \
-    ${OUT}/canonical/gencode/gencode_metrics.json
-
-# mane select
-sbatch metrics.sbatch \
-    ${OUT}/canonical/mane_select/predictions \
-    ${OUT}/canonical/mane_select/mane_select_metrics.json
-
-# pangolin tissues
-for tissue in heart liver brain testis; do
-    sbatch -J metrics_${tissue} metrics.sbatch \
-        ${OUT}/canonical/pangolin/predictions \
-        ${OUT}/canonical/pangolin/${tissue}_metrics.json \
-        --splice-combined
-done
-```
-
----
-
-<details>
-<summary>cluster-specific commands (northeastern explorer)</summary>
-
-### build h5 datasets
-
-```bash
-# gtex tissues
-for tissue in lung testis brain_cortex whole_blood; do
-    mkdir -p /scratch/runyan.m/splaire_run/${tissue}_var
-    sbatch \
-        --job-name="nf_${tissue}_var" \
-        --partition=short --mem=4G --time=12:00:00 \
-        --output="/scratch/runyan.m/splaire_run/${tissue}_var/nf_%j.out" \
-        --error="/scratch/runyan.m/splaire_run/${tissue}_var/nf_%j.err" \
-        --wrap="
-            source ~/.bashrc && module load nextflow && conda activate sp && unset JAVA_HOME
-            cd /scratch/runyan.m/splaire_run/${tissue}_var
-            nextflow run /projects/talisman/mrunyan/paper/splaire/pipeline/main.nf \
-                -entry build_h5_only \
-                --input_matrix /scratch/runyan.m/splaire_out/${tissue}/combined/combined_gene_variants_SNVs_sites.tsv \
-                --samplesheet /projects/talisman/mrunyan/paper/splaire/pipeline/configs/gtex/${tissue}_samples.tsv \
-                --splits_config /projects/talisman/mrunyan/paper/splaire/pipeline/configs/gtex/${tissue}_splits.yaml \
-                --output_dir /scratch/runyan.m/splaire_out/${tissue} \
-                --dataset_out_dir /scratch/runyan.m/splaire_out/${tissue}/ml_data_var \
-                -profile slurm -resume
-        "
-done
-
-# haec10
-mkdir -p /scratch/runyan.m/splaire_run/haec10_var
-sbatch \
-    --job-name="nf_haec10_var" \
-    --partition=short --mem=4G --time=12:00:00 \
-    --output="/scratch/runyan.m/splaire_run/haec10_var/nf_%j.out" \
-    --error="/scratch/runyan.m/splaire_run/haec10_var/nf_%j.err" \
-    --wrap="
-        source ~/.bashrc && module load nextflow && conda activate sp && unset JAVA_HOME
-        cd /scratch/runyan.m/splaire_run/haec10_var
-        nextflow run /projects/talisman/mrunyan/paper/splaire/pipeline/main.nf \
-            -entry build_h5_only \
-            --input_matrix /scratch/runyan.m/splaire_out/haec10/combined/combined_gene_variants_SNVs_sites.tsv \
-            --samplesheet /projects/talisman/mrunyan/paper/splaire/pipeline/configs/haec/haec182_samples.tsv \
-            --splits_config /projects/talisman/mrunyan/paper/splaire/pipeline/configs/haec/haec10_splits.yaml \
-            --output_dir /scratch/runyan.m/splaire_out/haec10 \
-            --dataset_out_dir /scratch/runyan.m/splaire_out/haec10/ml_data_var \
-            -profile slurm
-    "
-```
-
-### score all tissues
-
-```bash
-cd /projects/talisman/mrunyan/paper/splaire/analysis/test
-
-for tissue in brain_cortex whole_blood testis lung haec10; do
-    sbatch -J ${tissue} score.sbatch \
-        /scratch/runyan.m/splaire_out/${tissue}/ml_data_var/individual \
-        /scratch/runyan.m/splaire_out/${tissue}/ml_out_var
-done
-```
-
-### metrics all tissues
-
-```bash
-cd /projects/talisman/mrunyan/paper/splaire/analysis/test
-
-for tissue in brain_cortex whole_blood testis lung haec10; do
-    for ind in /scratch/runyan.m/splaire_out/${tissue}/ml_out_var/predictions/*/; do
-        name=$(basename "$ind")
-        sbatch -J ${tissue}_${name} metrics.sbatch \
-            "$ind" \
-            /scratch/runyan.m/splaire_out/${tissue}/ml_out_var/metrics/${name}.json \
-            --splicing-matrix /scratch/runyan.m/splaire_out/${tissue}/processed_splicing_matrix.tsv
-    done
-done
-```
-
-### benchmarks
-
-```bash
-cd /projects/talisman/mrunyan/paper/splaire/analysis/test
-
-# gencode
-sbatch score_gencode.sbatch /scratch/runyan.m/splaire_out/canonical/gencode
-
-# mane select
-sbatch score_mane.sbatch /scratch/runyan.m/splaire_out/canonical/mane_select
-
-# pangolin
-for tissue in heart liver brain testis; do
-    sbatch -J pang_${tissue} score_pangolin.sbatch \
-        /scratch/runyan.m/splaire_out/canonical/pangolin $tissue
-done
-```
-
-</details>
