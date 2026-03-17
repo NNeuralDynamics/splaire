@@ -1,0 +1,11 @@
+sample_id	donor_id	fastq_1	fastq_2	strandness	read_length
+GTEX-12WSH-0126-SM-5GCO3	GTEX-12WSH	/scratch/runyan.m/lung_gtex_v10/GTEX-12WSH-0126-SM-5GCO3_1.fastq	/scratch/runyan.m/lung_gtex_v10/GTEX-12WSH-0126-SM-5GCO3_2.fastq	unstranded	76
+GTEX-12ZZY-0926-SM-5EQ6I	GTEX-12ZZY	/scratch/runyan.m/lung_gtex_v10/GTEX-12ZZY-0926-SM-5EQ6I_1.fastq	/scratch/runyan.m/lung_gtex_v10/GTEX-12ZZY-0926-SM-5EQ6I_2.fastq	unstranded	76
+GTEX-1EMGI-1426-SM-7IGNQ	GTEX-1EMGI	/scratch/runyan.m/lung_gtex_v10/GTEX-1EMGI-1426-SM-7IGNQ_1.fastq	/scratch/runyan.m/lung_gtex_v10/GTEX-1EMGI-1426-SM-7IGNQ_2.fastq	unstranded	76
+GTEX-1F6I4-1026-SM-7P8PS	GTEX-1F6I4	/scratch/runyan.m/lung_gtex_v10/GTEX-1F6I4-1026-SM-7P8PS_1.fastq	/scratch/runyan.m/lung_gtex_v10/GTEX-1F6I4-1026-SM-7P8PS_2.fastq	unstranded	76
+GTEX-1HSMO-0926-SM-A96S7	GTEX-1HSMO	/scratch/runyan.m/lung_gtex_v10/GTEX-1HSMO-0926-SM-A96S7_1.fastq	/scratch/runyan.m/lung_gtex_v10/GTEX-1HSMO-0926-SM-A96S7_2.fastq	unstranded	76
+GTEX-1I1GV-0926-SM-B2LXM	GTEX-1I1GV	/scratch/runyan.m/lung_gtex_v10/GTEX-1I1GV-0926-SM-B2LXM_1.fastq	/scratch/runyan.m/lung_gtex_v10/GTEX-1I1GV-0926-SM-B2LXM_2.fastq	unstranded	76
+GTEX-1IKK5-1926-SM-A9G2V	GTEX-1IKK5	/scratch/runyan.m/lung_gtex_v10/GTEX-1IKK5-1926-SM-A9G2V_1.fastq	/scratch/runyan.m/lung_gtex_v10/GTEX-1IKK5-1926-SM-A9G2V_2.fastq	unstranded	76
+GTEX-1JJEA-1126-SM-CKZOC	GTEX-1JJEA	/scratch/runyan.m/lung_gtex_v10/GTEX-1JJEA-1126-SM-CKZOC_1.fastq	/scratch/runyan.m/lung_gtex_v10/GTEX-1JJEA-1126-SM-CKZOC_2.fastq	unstranded	76
+GTEX-1JMLX-0926-SM-CNNPQ	GTEX-1JMLX	/scratch/runyan.m/lung_gtex_v10/GTEX-1JMLX-0926-SM-CNNPQ_1.fastq	/scratch/runyan.m/lung_gtex_v10/GTEX-1JMLX-0926-SM-CNNPQ_2.fastq	unstranded	76
+GTEX-1MA7X-0626-SM-E9TJI	GTEX-1MA7X	/scratch/runyan.m/lung_gtex_v10/GTEX-1MA7X-0626-SM-E9TJI_1.fastq	/scratch/runyan.m/lung_gtex_v10/GTEX-1MA7X-0626-SM-E9TJI_2.fastq	unstranded	76

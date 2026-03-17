@@ -1,0 +1,11 @@
+sample_id	donor_id	bam	strandness	read_length
+GTEX-12WSH-0326-SM-5GCNH	GTEX-12WSH	/scratch/runyan.m/testis_gtex_v10/GTEX-12WSH-0326-SM-5GCNH.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-12ZZY-0126-SM-5LZV2	GTEX-12ZZY	/scratch/runyan.m/testis_gtex_v10/GTEX-12ZZY-0126-SM-5LZV2.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1EMGI-0626-SM-7MXUS	GTEX-1EMGI	/scratch/runyan.m/testis_gtex_v10/GTEX-1EMGI-0626-SM-7MXUS.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1F6I4-1426-SM-7MXU3	GTEX-1F6I4	/scratch/runyan.m/testis_gtex_v10/GTEX-1F6I4-1426-SM-7MXU3.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1HSMO-2426-SM-A9G24	GTEX-1HSMO	/scratch/runyan.m/testis_gtex_v10/GTEX-1HSMO-2426-SM-A9G24.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1I1GV-2526-SM-B2LXL	GTEX-1I1GV	/scratch/runyan.m/testis_gtex_v10/GTEX-1I1GV-2526-SM-B2LXL.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1IKK5-2426-SM-CE6SV	GTEX-1IKK5	/scratch/runyan.m/testis_gtex_v10/GTEX-1IKK5-2426-SM-CE6SV.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1JJEA-1926-SM-AHZ41	GTEX-1JJEA	/scratch/runyan.m/testis_gtex_v10/GTEX-1JJEA-1926-SM-AHZ41.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1JMLX-0726-SM-AHZ3M	GTEX-1JMLX	/scratch/runyan.m/testis_gtex_v10/GTEX-1JMLX-0726-SM-AHZ3M.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1MA7X-1526-SM-DHXJF	GTEX-1MA7X	/scratch/runyan.m/testis_gtex_v10/GTEX-1MA7X-1526-SM-DHXJF.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76

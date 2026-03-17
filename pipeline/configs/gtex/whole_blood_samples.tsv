@@ -1,0 +1,11 @@
+sample_id	donor_id	bam	strandness	read_length
+GTEX-12WSH-0005-SM-5NQ9P	GTEX-12WSH	/scratch/runyan.m/whole_blood_gtex_v10/GTEX-12WSH-0005-SM-5NQ9P.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-12ZZY-0005-SM-GHWOQ	GTEX-12ZZY	/scratch/runyan.m/whole_blood_gtex_v10/GTEX-12ZZY-0005-SM-GHWOQ.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1EMGI-0006-SM-ACKVA	GTEX-1EMGI	/scratch/runyan.m/whole_blood_gtex_v10/GTEX-1EMGI-0006-SM-ACKVA.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1F6I4-0005-SM-ARZKZ	GTEX-1F6I4	/scratch/runyan.m/whole_blood_gtex_v10/GTEX-1F6I4-0005-SM-ARZKZ.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1HSMO-0005-SM-ADEGW	GTEX-1HSMO	/scratch/runyan.m/whole_blood_gtex_v10/GTEX-1HSMO-0005-SM-ADEGW.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1I1GV-0005-SM-AHZ27	GTEX-1I1GV	/scratch/runyan.m/whole_blood_gtex_v10/GTEX-1I1GV-0005-SM-AHZ27.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1IKK5-0006-SM-CMKFI	GTEX-1IKK5	/scratch/runyan.m/whole_blood_gtex_v10/GTEX-1IKK5-0006-SM-CMKFI.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1JJEA-0006-SM-DHXJ2	GTEX-1JJEA	/scratch/runyan.m/whole_blood_gtex_v10/GTEX-1JJEA-0006-SM-DHXJ2.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1JMLX-0006-SM-DHXJ6	GTEX-1JMLX	/scratch/runyan.m/whole_blood_gtex_v10/GTEX-1JMLX-0006-SM-DHXJ6.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1MA7X-0006-SM-CXZJ6	GTEX-1MA7X	/scratch/runyan.m/whole_blood_gtex_v10/GTEX-1MA7X-0006-SM-CXZJ6.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76

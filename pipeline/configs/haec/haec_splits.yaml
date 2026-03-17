@@ -1,0 +1,48 @@
+# split configuration for HAEC - asymmetric paralog filtering
+# test: chr1,3,5,7 non-paralogs only (82 samples)
+# train: ALL paralogs from ALL chr + non-paralogs from chr2,4,6,8-22 (100 samples)
+
+samples:
+  test_file: ${projectDir}/configs/haec/test_samples82.txt
+  train_file: ${projectDir}/configs/haec/train_samples100.txt
+
+chromosomes:
+  test:
+    - chr1
+    - chr3
+    - chr5
+    - chr7
+  train:
+    - chr2
+    - chr4
+    - chr6
+    - chr8
+    - chr10
+    - chr11
+    - chr12
+    - chr13
+    - chr14
+    - chr15
+    - chr16
+    - chr17
+    - chr18
+    - chr19
+    - chr20
+    - chr21
+    - chr22
+
+generate: all
+
+dataset:
+  variant: single
+  paralog: all
+  make_gc: true
+  reference: true
+  remove_missing: false
+  asymmetric_paralog_chroms: true
+
+# per-split GENCODE filling: true = add TSL=1 splice sites with SSU=777
+fill_gencode:
+  train: true
+  valid: true
+  test: false

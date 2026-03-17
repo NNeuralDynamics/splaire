@@ -1,0 +1,11 @@
+sample_id	donor_id	bam	strandness	read_length
+DD048Q	DD048Q	/projects/talisman/shared-data/HAEC-185/bams/DD048Q.markdup.sorted.bam	rf	101
+DD040OP2	DD040OP2	/projects/talisman/shared-data/HAEC-185/bams/DD040OP2.markdup.sorted.bam	rf	101
+DD061Q	DD061Q	/projects/talisman/shared-data/HAEC-185/bams/DD061Q.markdup.sorted.bam	rf	101
+DD022PP2	DD022PP2	/projects/talisman/shared-data/HAEC-185/bams/DD022PP2.markdup.sorted.bam	rf	101
+DD008PP2	DD008PP2	/projects/talisman/shared-data/HAEC-185/bams/DD008PP2.markdup.sorted.bam	rf	101
+DD061OP2	DD061OP2	/projects/talisman/shared-data/HAEC-185/bams/DD061OP2.markdup.sorted.bam	rf	101
+DD046N	DD046N	/projects/talisman/shared-data/HAEC-185/bams/DD046N.markdup.sorted.bam	rf	101
+DD020QP1	DD020QP1	/projects/talisman/shared-data/HAEC-185/bams/DD020QP1.markdup.sorted.bam	rf	101
+DD045J	DD045J	/projects/talisman/shared-data/HAEC-185/bams/DD045J.markdup.sorted.bam	rf	101
+DD037QP2	DD037QP2	/projects/talisman/shared-data/HAEC-185/bams/DD037QP2.markdup.sorted.bam	rf	101

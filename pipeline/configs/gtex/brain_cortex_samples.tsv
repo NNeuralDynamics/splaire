@@ -1,0 +1,11 @@
+sample_id	donor_id	bam	strandness	read_length
+GTEX-12WSH-3026-SM-5CVNI	GTEX-12WSH	/scratch/runyan.m/brain_cortex_gtex_v10/GTEX-12WSH-3026-SM-5CVNI.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-12ZZY-3026-SM-5GCOU	GTEX-12ZZY	/scratch/runyan.m/brain_cortex_gtex_v10/GTEX-12ZZY-3026-SM-5GCOU.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1EMGI-3026-SM-7P8P6	GTEX-1EMGI	/scratch/runyan.m/brain_cortex_gtex_v10/GTEX-1EMGI-3026-SM-7P8P6.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1F6I4-3126-SM-7P8SD	GTEX-1F6I4	/scratch/runyan.m/brain_cortex_gtex_v10/GTEX-1F6I4-3126-SM-7P8SD.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1HSMO-3026-SM-A9G3F	GTEX-1HSMO	/scratch/runyan.m/brain_cortex_gtex_v10/GTEX-1HSMO-3026-SM-A9G3F.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1I1GV-3126-SM-A96SF	GTEX-1I1GV	/scratch/runyan.m/brain_cortex_gtex_v10/GTEX-1I1GV-3126-SM-A96SF.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1IKK5-2926-SM-ARU7Q	GTEX-1IKK5	/scratch/runyan.m/brain_cortex_gtex_v10/GTEX-1IKK5-2926-SM-ARU7Q.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1JJEA-2826-SM-ARU8R	GTEX-1JJEA	/scratch/runyan.m/brain_cortex_gtex_v10/GTEX-1JJEA-2826-SM-ARU8R.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1JMLX-2926-SM-CL54C	GTEX-1JMLX	/scratch/runyan.m/brain_cortex_gtex_v10/GTEX-1JMLX-2926-SM-CL54C.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76
+GTEX-1MA7X-2526-SM-GPI9W	GTEX-1MA7X	/scratch/runyan.m/brain_cortex_gtex_v10/GTEX-1MA7X-2526-SM-GPI9W.Aligned.sortedByCoord.out.patched.md.bam	unstranded	76

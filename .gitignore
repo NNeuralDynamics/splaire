@@ -148,6 +148,7 @@ models/*.py
 
 # pipeline — ignore for now
 pipeline/scripts/
+pipeline/__init__.py
 pipeline/splaire_data.yml
 pipeline/configs/splits_config.template.yaml
 

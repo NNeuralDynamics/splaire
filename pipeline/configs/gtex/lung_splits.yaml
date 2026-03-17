@@ -1,0 +1,29 @@
+# split configuration for gtex lung (test-only)
+
+samples:
+  test_file: ${projectDir}/configs/gtex/lung_test_samples.txt
+
+chromosomes:
+  test:
+    - chr1
+    - chr3
+    - chr5
+    - chr7
+
+generate: test_only
+
+dataset:
+  variant: single
+  paralog: 0
+  make_gc: true
+  reference: false
+  remove_missing: false
+
+# per-split GENCODE filling
+fill_gencode:
+  test: false
+
+# parallel processing options (for ml_data_parallel workflow)
+parallel:
+  by: donor          # donor, chrom, or both (default: donor)
+  save_individual: true  # save per-donor/chrom h5 files in addition to combined

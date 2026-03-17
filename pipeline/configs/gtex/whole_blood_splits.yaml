@@ -1,0 +1,28 @@
+# split configuration for gtex whole blood (test-only)
+
+samples:
+  test_file: ${projectDir}/configs/gtex/whole_blood_test_samples.txt
+
+chromosomes:
+  test:
+    - chr1
+    - chr3
+    - chr5
+    - chr7
+
+generate: test_only
+
+dataset:
+  variant: single
+  paralog: 0
+  make_gc: true
+  reference: false
+  remove_missing: false
+
+# per-split GENCODE filling
+fill_gencode:
+  test: false
+
+parallel:
+  by: donor
+  save_individual: true
