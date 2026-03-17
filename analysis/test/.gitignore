@@ -1,0 +1,15 @@
+*.bed
+*.tsv
+*.tsv.gz
+*.txt
+!data/paralogs.txt
+!data/canonical_dataset.txt
+!data/canonical_dataset_mane_select_p.txt
+*.h5
+*.parquet
+*.json
+*_logs*/
+output/
+.ipynb_checkpoints/
+__pycache__/
+*.pyc

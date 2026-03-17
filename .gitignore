@@ -136,7 +136,7 @@ CHANGELOG.md
 !analysis/sqtl_bench/sqtl_benchmark_analysis.ipynb
 !analysis/explain/analysis.ipynb
 !analysis/dists/dists.ipynb
-!analysis/test/figures_v2.ipynb
+!analysis/test/figures.ipynb
 
 # specific analysis data
 !analysis/fine_map/tabix_ftp_paths.tsv
