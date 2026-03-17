@@ -1,22 +1,38 @@
 name: splaire_env
 channels:
-  - conda-forge
+  - pytorch
+  - nvidia
   - bioconda
+  - conda-forge
   - defaults
 dependencies:
   - python=3.10
   - bedtools
-  - nextflow
   - samtools
+  - nextflow
   - numba
   - pip
   - pip:
       - tensorflow==2.17.0
-      - h5py
-      - numpy<2
-      - pandas
-      - pyarrow
-      - scikit-learn
-      - tqdm
-      - pyfaidx
-      - pysam
+      - torch==2.3.1
+      - torchaudio==2.3.1
+      - torchvision==0.18.1
+      - keras==3.12.0
+      - h5py==3.10.0
+      - numpy==1.26.4
+      - pandas==2.3.3
+      - pyarrow==22.0.0
+      - scikit-learn==1.7.2
+      - scipy==1.15.3
+      - tqdm==4.67.1
+      - pyfaidx==0.9.0.3
+      - pysam==0.23.3
+      - spliceai==1.3.1
+      - biopython==1.86
+      - matplotlib==3.10.7
+      - seaborn==0.13.2
+      - cyvcf2==0.31.4
+      - pyranges==0.1.4
+      - polars-lts-cpu==1.33.1
+      - tangermeme==1.0.0
+      - logomaker==0.8.7
