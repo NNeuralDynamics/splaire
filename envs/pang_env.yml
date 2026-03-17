@@ -1,0 +1,20 @@
+name: pang_env
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch=2.2
+  - pytorch-cuda=12.1
+  - pip
+  - pip:
+      - h5py
+      - numpy<2
+      - pandas
+      - pyarrow
+      - scipy
+      - tqdm
+      - pysam
+      - biopython

@@ -1,0 +1,22 @@
+name: splaire_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - bedtools
+  - nextflow
+  - samtools
+  - numba
+  - pip
+  - pip:
+      - tensorflow==2.17.0
+      - h5py
+      - numpy<2
+      - pandas
+      - pyarrow
+      - scikit-learn
+      - tqdm
+      - pyfaidx
+      - pysam

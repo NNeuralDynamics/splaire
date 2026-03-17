@@ -1,0 +1,17 @@
+name: sa_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - spliceai
+      - tensorflow==2.17.0
+      - h5py
+      - numpy<2
+      - pandas
+      - pyarrow
+      - tqdm
+      - pyfaidx
+      - pysam
