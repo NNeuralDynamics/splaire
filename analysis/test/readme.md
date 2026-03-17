@@ -18,7 +18,7 @@ DATA=<dir_with_splice_tables>
 OUT=<output_dir>
 ```
 
-`DATA` should contain the splice tables:
+`DATA` should contain the splice tables (these are `combined_gene_variants_SNVs_sites.tsv` from the pipeline `combined/` output, renamed per tissue):
 
 ```
 brain_cortex_splice_table.tsv
@@ -26,6 +26,14 @@ whole_blood_splice_table.tsv
 testis_splice_table.tsv
 lung_splice_table.tsv
 haec10_splice_table.tsv
+```
+
+the genome FASTA must be at `pipeline/reference/GRCh38/GRCh38.primary_assembly.genome.fa`. if not present, download it:
+
+```bash
+cd ${REPO}/pipeline/reference/GRCh38
+python getReference.py --version 45 --download ref --output_dir .
+gunzip GRCh38.primary_assembly.genome.fa.gz
 ```
 
 ## build h5 datasets
