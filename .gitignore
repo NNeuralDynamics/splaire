@@ -133,7 +133,7 @@ CHANGELOG.md
 # key analysis notebooks
 !analysis/figures.ipynb
 !analysis/reporter_assays/reporter_assays.ipynb
-!analysis/sqtl_bench/sqtl_benchmark_analysis.ipynb
+# !analysis/sqtl_bench/sqtl_benchmark_analysis.ipynb
 !analysis/explain/analysis.ipynb
 !analysis/dists/dists.ipynb
 !analysis/test/figures.ipynb
@@ -165,3 +165,6 @@ pipeline/configs/splits_config.template.yaml
 !pipeline/reference/GRCh38/paralogs_GRCh38.txt.gz
 pipeline/reference/GRCh38/gencode.v45.rRNA.interval_list
 pipeline/reference/GRCh38/gencode.v45.refFlat.txt.bak
+
+# sqtl bench — not needed
+analysis/sqtl_bench/src/check_unmatched.py
