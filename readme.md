@@ -16,14 +16,3 @@ gunzip GRCh38.primary_assembly.genome.fa.gz
 ```
 
 see individual subfolder readmes for detailed usage.
-
-## citation
-
-```bibtex
-@article{splaire2025,
-  title={Alternative splicing quantification for naturally occurring variants using deep learning models},
-  author={Runyan, Matthew and Gupta, Saumya and Dy, Jennifer and Radivojac, Predrag and Tesfaigzi, Yohannes and Castaldi, Peter and Paul, Ayan},
-  journal={},
-  year={2025}
-}
-```
