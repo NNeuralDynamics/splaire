@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+"""
+test if SpliceTransformer works with DeepLIFT-SHAP
+
+run from explain directory:
+    cd /projects/talisman/mrunyan/paper/SpHAEC/analysis/explain
+    conda activate splaire_env
+    python src/test_splicetransformer_attribution.py
+"""
+
+import sys
+import torch
+import numpy as np
+
+print("=" * 60)
+print("SpliceTransformer + DeepLIFT-SHAP compatibility test")
+print("=" * 60)
+
+# check cuda
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"device: {device}")
+if device == "cpu":
+    print("WARNING: running on CPU will be slow")
+
+# load model
+print("\n1. loading SpliceTransformer...")
+try:
+    from model_wrappers.splicetransformer import load_splicetransformer_model, get_head
+    base_model = load_splicetransformer_model(device, enable_gradients=True)
+    model = get_head(base_model, "acceptor").to(device).eval()
+    print("   loaded successfully")
+    print(f"   model device: {next(model.parameters()).device}")
+except Exception as e:
+    print(f"   FAILED to load model: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+
+# print model architecture
+print("\n1b. Model Architecture Summary")
+print("-" * 60)
+
+# count parameters
+total_params = sum(p.numel() for p in base_model.parameters())
+trainable_params = sum(p.numel() for p in base_model.parameters() if p.requires_grad)
+print(f"   total parameters: {total_params:,}")
+print(f"   trainable parameters: {trainable_params:,}")
+
+# count module types
+from collections import Counter
+module_types = Counter(m.__class__.__name__ for m in base_model.modules())
+print(f"   module types:")
+for name, count in module_types.most_common(10):
+    print(f"      {name}: {count}")
+
+# print high-level structure
+print(f"\n   top-level children:")
+for name, child in base_model.named_children():
+    child_params = sum(p.numel() for p in child.parameters())
+    print(f"      {name}: {child.__class__.__name__} ({child_params:,} params)")
+
+print("-" * 60)
+
+# test forward pass
+print("\n2. testing forward pass...")
+try:
+    x = torch.randn(2, 4, 10001).to(device)
+    x = torch.softmax(x, dim=1)  # make one-hot-ish
+
+    with torch.no_grad():
+        y = model(x)
+    print(f"   input shape: {x.shape}")
+    print(f"   output shape: {y.shape}")
+    print(f"   output values: {y.squeeze().cpu().numpy()}")
+except Exception as e:
+    print(f"   FAILED forward pass: {e}")
+    sys.exit(1)
+
+# test gradient flow
+print("\n3. testing gradient flow...")
+try:
+    x = torch.randn(2, 4, 10001, device=device, requires_grad=True)
+    x_soft = torch.softmax(x, dim=1)
+    x_soft.retain_grad()  # needed for non-leaf tensor
+    y = model(x_soft)
+    y.sum().backward()
+
+    # check gradient on the softmax output (what model sees)
+    grad_norm = x_soft.grad.norm().item()
+    print(f"   gradient norm (at model input): {grad_norm:.6f}")
+
+    # also check if gradients reached original input
+    if x.grad is not None:
+        orig_grad_norm = x.grad.norm().item()
+        print(f"   gradient norm (at original input): {orig_grad_norm:.6f}")
+
+    if grad_norm > 0:
+        print("   gradients flow successfully through model")
+    else:
+        print("   WARNING: gradients are zero!")
+except Exception as e:
+    print(f"   FAILED gradient test: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+
+# test DeepLIFT-SHAP
+print("\n4. testing DeepLIFT-SHAP attribution...")
+try:
+    from tangermeme.deep_lift_shap import deep_lift_shap
+    from tangermeme.ersatz import dinucleotide_shuffle
+
+    # clear GPU cache first
+    if device == "cuda":
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
+    # create proper one-hot encoded sequences (not softmax)
+    # use batch_size=1 due to high memory usage with transformer
+    seq_len = 10001
+    batch_size = 1
+    indices = np.random.randint(0, 4, size=(batch_size, seq_len))
+    x = np.zeros((batch_size, 4, seq_len), dtype=np.float32)
+    for i in range(batch_size):
+        x[i, indices[i], np.arange(seq_len)] = 1.0
+    x = torch.from_numpy(x).to(device)
+    print(f"   input: one-hot encoded, shape {x.shape}")
+
+    # use fewer shuffles to reduce memory
+    print("   running deep_lift_shap (batch=1, n_shuffles=3)...")
+    import time
+    t0 = time.time()
+    attr = deep_lift_shap(
+        model,
+        x,
+        n_shuffles=3,  # reduced from 20
+        device=device,
+        references=dinucleotide_shuffle,
+        hypothetical=True,
+        verbose=True,
+        print_convergence_deltas=True,
+        warning_threshold=0.001,
+        random_state=42,
+    )
+    elapsed = time.time() - t0
+    print(f"   elapsed time: {elapsed:.1f} sec")
+
+    print(f"   attribution shape: {attr.shape}")
+    print(f"   attribution range: [{attr.min().item():.4f}, {attr.max().item():.4f}]")
+    print(f"   attribution sum: {attr.sum().item():.4f}")
+
+    # check if attributions are meaningful (not all zeros or NaN)
+    if torch.isnan(attr).any():
+        print("   WARNING: attributions contain NaN!")
+    elif attr.abs().max() < 1e-10:
+        print("   WARNING: attributions are essentially zero!")
+    else:
+        print("   attributions look reasonable")
+
+    # report memory usage
+    if device == "cuda":
+        peak_mem = torch.cuda.max_memory_allocated() / 1024**3
+        print(f"   peak GPU memory: {peak_mem:.1f} GB")
+
+except torch.cuda.OutOfMemoryError as e:
+    print(f"   FAILED: CUDA out of memory")
+    print("   SpliceTransformer + full gradients is very memory-hungry")
+    print("   Consider: smaller batch, fewer shuffles, or gradient checkpointing")
+    if device == "cuda":
+        allocated = torch.cuda.memory_allocated() / 1024**3
+        reserved = torch.cuda.memory_reserved() / 1024**3
+        print(f"   GPU memory: {allocated:.1f} GB allocated, {reserved:.1f} GB reserved")
+    sys.exit(1)
+except Exception as e:
+    print(f"   FAILED DeepLIFT-SHAP: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+
+# test on real sequence if available
+print("\n5. testing on real splice site sequence...")
+try:
+    import h5py
+    seq_path = "data/sphaec/sequences.h5"
+
+    with h5py.File(seq_path, "r") as f:
+        X = f["X"][:2]  # just first 2 sequences
+
+    x = torch.from_numpy(X).permute(0, 2, 1).float().to(device)
+    print(f"   loaded {x.shape[0]} sequences from {seq_path}")
+
+    # forward pass
+    with torch.no_grad():
+        y = model(x)
+    print(f"   predictions: {y.squeeze().cpu().numpy()}")
+
+    # attribution
+    print("   running deep_lift_shap...")
+    attr = deep_lift_shap(
+        model,
+        x,
+        n_shuffles=5,
+        device=device,
+        references=dinucleotide_shuffle,
+        hypothetical=True,
+        verbose=False,
+        random_state=42,
+    )
+
+    # compute obs attribution (attr * input)
+    attr_obs = (attr * x).sum(dim=1)  # (batch, length)
+    print(f"   obs attribution shape: {attr_obs.shape}")
+    print(f"   obs attribution range: [{attr_obs.min().item():.4f}, {attr_obs.max().item():.4f}]")
+
+except FileNotFoundError:
+    print(f"   skipped (sequences file not found)")
+except Exception as e:
+    print(f"   FAILED on real sequence: {e}")
+    import traceback
+    traceback.print_exc()
+
+print("\n" + "=" * 60)
+print("TEST COMPLETE")
+print("=" * 60)
+print("\nIf all tests passed, SpliceTransformer should work with DeepLIFT-SHAP.")
+print("However, verify attribution quality by visualizing results on known splice sites.")

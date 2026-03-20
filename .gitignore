@@ -134,7 +134,7 @@ CHANGELOG.md
 !analysis/figures.ipynb
 !analysis/reporter_assays/reporter_assays.ipynb
 # !analysis/sqtl_bench/sqtl_benchmark_analysis.ipynb
-!analysis/explain/analysis.ipynb
+# !analysis/explain/analysis.ipynb
 !analysis/dists/dists.ipynb
 !analysis/test/figures.ipynb
 
@@ -168,3 +168,22 @@ pipeline/reference/GRCh38/gencode.v45.refFlat.txt.bak
 
 # sqtl bench — not needed
 analysis/sqtl_bench/src/check_unmatched.py
+
+# explain — only track core attribution pipeline
+analysis/explain/data/
+analysis/explain/figures/
+analysis/explain/logs/
+analysis/explain/src/ablate.py
+analysis/explain/src/ablate.sh
+analysis/explain/src/annotate_splice_sites.py
+analysis/explain/src/check_haec_only.py
+analysis/explain/src/check_site_overlap.py
+analysis/explain/src/compare_model_architectures.py
+analysis/explain/src/diagnose_ml_only.py
+analysis/explain/src/find_seqlets.py
+analysis/explain/src/make_attract_meme.py
+analysis/explain/src/model_wrappers/pangolin.py
+analysis/explain/src/model_wrappers/spliceai.py
+analysis/explain/src/model_wrappers/splicetransformer.py
+analysis/explain/src/test_*.py
+analysis/explain/src/*.sbatch
