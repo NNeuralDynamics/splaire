@@ -4,7 +4,7 @@ nextflow.enable.dsl=2
 // consolidates: filter_vars -> select_chrom_samples -> adjust_sites -> mutate_sequences -> create_dataset
 
 process BUILD_H5 {
-    tag "${job.split}_${job.donor}"
+    tag "${job.output_prefix ?: job.split}_${job.donor}"
     label 'process_high'
     publishDir "${params.dataset_out_dir ?: params.output_dir + '/ml_data'}/individual", mode: 'copy', pattern: "*.h5"
 
@@ -12,12 +12,16 @@ process BUILD_H5 {
     tuple val(job), path(input_tsv)
 
     output:
-    tuple val(job), path("${job.split}_${job.donor}.h5")
+    tuple val(job), path("${job.output_prefix ?: job.split}_${job.donor}.h5")
 
     script:
+    // build_split = train/valid/test (for build_h5.py --split arg)
+    // output_prefix = train_split1, valid_split2, etc (for filenames + grouping)
+    def build_split = job.build_split ?: job.split
+    def prefix = job.output_prefix ?: job.split
     def chromArg = job.chrom_file ? file(job.chrom_file).text.trim().split('\n').join(',') : job.chroms
     def fastaPath = params.dataset_fasta ?: params.genome_fasta
-    def workDir = "${params.dataset_work_dir ?: params.output_dir + '/ml_work'}/${job.split}_${job.donor}"
+    def workDir = "${params.dataset_work_dir ?: params.output_dir + '/ml_work'}/${prefix}_${job.donor}"
     def logDir = "${params.logs_dir}/ml_data"
     def makeGcFlag = job.make_gc ? "--make-gc" : ""
     def rmFlag = job.remove_missing ? "--remove-missing" : ""
@@ -30,11 +34,11 @@ process BUILD_H5 {
     mkdir -p ${workDir} ${logDir}
     python ${projectDir}/src/build_h5.py \
         --donor ${job.donor} \
-        --split ${job.split} \
+        --split ${build_split} \
         --input ${input_tsv} \
         --chroms "${chromArg}" \
         --fasta ${fastaPath} \
-        --output ${job.split}_${job.donor}.h5 \
+        --output ${prefix}_${job.donor}.h5 \
         --work-dir ${workDir} \
         --log-dir ${logDir} \
         --mode ${encoding_mode} \

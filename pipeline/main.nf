@@ -16,9 +16,10 @@ include { MAKE_MATRIX }       from './modules/MAKE_MATRIX.nf'
 include { ADD_SITES }         from './modules/ADD_SITES.nf'
 include { FILTER_EMPTY_TXS }  from './modules/FILTER_EMPTY_TXS.nf'
 include { FILL_GENCODE }      from './modules/FILL_GENCODE.nf'
-include { GENERATE_SPLITS }   from './modules/GENERATE_SPLITS.nf'
-include { BUILD_H5 }          from './modules/BUILD_H5.nf'
-include { COMBINE_H5 }        from './modules/COMBINE_H5.nf'
+include { GENERATE_SPLITS }           from './modules/GENERATE_SPLITS.nf'
+include { GENERATE_TRAIN_VAL_SPLITS } from './modules/GENERATE_TRAIN_VAL_SPLITS.nf'
+include { BUILD_H5 }                  from './modules/BUILD_H5.nf'
+include { COMBINE_H5 }                from './modules/COMBINE_H5.nf'
 
 
 workflow {
@@ -191,46 +192,129 @@ workflow build_datasets {
     main:
     split_config = GENERATE_SPLITS(file(params.samplesheet), file(params.splits_config))
 
-    // expand split config into one BUILD_H5 job per (donor, split) combination
-    donor_jobs = split_config.train_samples
+    // parse configs
+    val_opts_ch = split_config.validation_options.map { f -> Utils.parseValidationOpts(f) }
+
+    // standard jobs: test + train + valid (from sample-level config)
+    standard_jobs = split_config.train_samples
         .combine(split_config.valid_samples)
         .combine(split_config.test_samples)
         .combine(split_config.train_chroms)
         .combine(split_config.valid_chroms)
         .combine(split_config.test_chroms)
         .combine(split_config.dataset_options)
+        .combine(split_config.validation_options)
         .combine(sites_unfilled)
         .combine(sites_filled)
-        .flatMap { train_samp, valid_samp, test_samp, train_chr, valid_chr, test_chr, opts_file, unfilled, filled ->
+        .flatMap { train_samp, valid_samp, test_samp, train_chr, valid_chr, test_chr, opts_file, val_opts_file, unfilled, filled ->
             def opts = Utils.parseDatasetOpts(opts_file)
+            def val_opts = Utils.parseValidationOpts(val_opts_file)
             def encoding = Utils.getEncodingMode(opts.variant)
             def jobs = []
 
-            [['test', test_samp, test_chr, opts.fill_gencode_test],
-             ['valid', valid_samp, valid_chr, opts.fill_gencode_valid],
-             ['train', train_samp, train_chr, opts.fill_gencode_train]].each { split, samples, chroms, use_gencode ->
-                if (samples.size() > 0) {
-                    def chrom_str = Utils.chromsToString(chroms)
-                    def input_tsv = use_gencode ? filled : unfilled
-                    Utils.extractDonors(samples).each { donor ->
-                        jobs << tuple([
-                            donor: donor, split: split, chroms: chrom_str,
-                            encoding_mode: encoding, paralog: opts.paralog,
-                            make_gc: opts.make_gc, remove_missing: opts.remove_missing,
-                            asymmetric_paralog: opts.asymmetric_paralog,
-                            reference: opts.reference
-                        ], input_tsv)
+            // test split (always from original matrix)
+            if (test_samp.size() > 0) {
+                def chrom_str = Utils.chromsToString(test_chr)
+                def input_tsv = opts.fill_gencode_test ? filled : unfilled
+                Utils.extractDonors(test_samp).collect { donor ->
+                    jobs << tuple([
+                        donor: donor, split: 'test', build_split: 'test',
+                        output_prefix: 'test', chroms: chrom_str,
+                        encoding_mode: encoding, paralog: opts.paralog,
+                        make_gc: opts.make_gc, remove_missing: opts.remove_missing,
+                        asymmetric_paralog: opts.asymmetric_paralog,
+                        reference: opts.reference
+                    ], input_tsv)
+                }
+            }
+
+            // train/valid from sample-level config (skip if validation splitting is enabled)
+            if (!val_opts.has_validation) {
+                [['valid', valid_samp, valid_chr, opts.fill_gencode_valid],
+                 ['train', train_samp, train_chr, opts.fill_gencode_train]].each { split, samples, chroms, use_gencode ->
+                    if (samples.size() > 0) {
+                        def chrom_str = Utils.chromsToString(chroms)
+                        def input_tsv = use_gencode ? filled : unfilled
+                        Utils.extractDonors(samples).collect { donor ->
+                            jobs << tuple([
+                                donor: donor, split: split, build_split: split,
+                                output_prefix: split, chroms: chrom_str,
+                                encoding_mode: encoding, paralog: opts.paralog,
+                                make_gc: opts.make_gc, remove_missing: opts.remove_missing,
+                                asymmetric_paralog: opts.asymmetric_paralog,
+                                reference: opts.reference
+                            ], input_tsv)
+                        }
                     }
                 }
             }
             jobs
         }
 
-    donor_h5s = BUILD_H5(donor_jobs)
+    // validation-split jobs: transcript-level train/valid from GENERATE_TRAIN_VAL_SPLITS
+    // only runs when validation config is present
+    val_split_jobs = split_config.validation_options
+        .combine(split_config.train_samples)
+        .combine(split_config.dataset_options)
+        .combine(sites_filled)
+        .flatMap { val_opts_file, train_samp, opts_file, filled ->
+            def val_opts = Utils.parseValidationOpts(val_opts_file)
+            if (!val_opts.has_validation) return []
 
-    // group h5 files by split and combine into final datasets
+            // emit a single trigger to launch the splitting process
+            [tuple(val_opts, train_samp, opts_file, filled)]
+        }
+
+    // run transcript-level splitting (produces N train + N valid tsvs)
+    val_input = val_split_jobs.map { val_opts, train_samp, opts_file, filled ->
+        tuple(filled, val_opts.frac, val_opts.n_splits, val_opts.seed, val_opts.exclude_chroms)
+    }
+    .multiMap { matrix, frac, n, seed, excl ->
+        matrix: matrix
+        frac: frac
+        n_splits: n
+        seed: seed
+        exclude: excl
+    }
+    val_tsvs = GENERATE_TRAIN_VAL_SPLITS(
+        val_input.matrix, val_input.frac, val_input.n_splits, val_input.seed, val_input.exclude
+    )
+
+    // expand per-split tsvs into per-donor BUILD_H5 jobs
+    val_donor_jobs = val_tsvs.train_tsvs.flatten()
+        .mix(val_tsvs.valid_tsvs.flatten())
+        .combine(split_config.train_samples)
+        .combine(split_config.dataset_options)
+        .flatMap { tsv, train_samp, opts_file ->
+            def opts = Utils.parseDatasetOpts(opts_file)
+            def encoding = Utils.getEncodingMode(opts.variant)
+            // parse split number and type from filename
+            def m = (tsv.name =~ /split(\d+)_(train|validation)\.tsv/)
+            def split_num = m[0][1]
+            def split_type = m[0][2] == 'validation' ? 'valid' : 'train'
+            def prefix = "${split_type}_split${split_num}"
+            // all autosomes (tsv is already chrom-filtered)
+            def all_auto = (1..22).collect { "chr${it}" }.join(',')
+
+            Utils.extractDonors(train_samp).collect { donor ->
+                tuple([
+                    donor: donor, split: prefix, build_split: split_type,
+                    output_prefix: prefix, chroms: all_auto,
+                    encoding_mode: encoding, paralog: 'all',
+                    make_gc: opts.make_gc, remove_missing: opts.remove_missing,
+                    asymmetric_paralog: false,
+                    reference: opts.reference
+                ], tsv)
+            }
+        }
+
+    // merge all jobs and build
+    all_jobs = standard_jobs.mix(val_donor_jobs)
+    donor_h5s = BUILD_H5(all_jobs)
+
+    // group by output_prefix and combine
     by_split = donor_h5s
-        .map { job, h5 -> tuple(job.split, h5) }
+        .map { job, h5 -> tuple(job.output_prefix ?: job.split, h5) }
         .groupTuple()
         .multiMap { split, files -> h5s: files; name: split }
 

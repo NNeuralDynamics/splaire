@@ -140,6 +140,23 @@ def main():
         f.write(f"parallel_by={parallel_by}\n")
         f.write(f"save_individual={save_individual}\n")
 
+    # parse validation options (optional)
+    val_cfg = config.get("validation", {})
+    has_val = bool(val_cfg) and make_train
+    val_frac = val_cfg.get("frac", 0.10)
+    val_n_splits = val_cfg.get("n_splits", 5)
+    val_seed = val_cfg.get("seed", 42)
+    # derive exclude chroms from test chromosomes
+    test_chr_nums = [c.replace("chr", "") for c in chroms_cfg.get("test", [])]
+    val_exclude = ",".join(test_chr_nums) if test_chr_nums else ""
+
+    with open(f"{out_dir}/validation_options.txt", "w") as f:
+        f.write(f"has_validation={has_val}\n")
+        f.write(f"frac={val_frac}\n")
+        f.write(f"n_splits={val_n_splits}\n")
+        f.write(f"seed={val_seed}\n")
+        f.write(f"exclude_chroms={val_exclude}\n")
+
     print(f"generate mode: {generate_mode}")
     print(f"train: {len(train_samples)} samples, {len(train_chroms)} chromosomes")
     print(f"valid: {len(valid_samples)} samples, {len(valid_chroms)} chromosomes")
@@ -147,6 +164,7 @@ def main():
     print(f"dataset: variant={variant}, paralog={paralog}, make_gc={make_gc}, remove_missing={remove_missing}")
     print(f"fill_gencode: train={fill_gencode_train}, valid={fill_gencode_valid}, test={fill_gencode_test}")
     print(f"parallel: by={parallel_by}, save_individual={save_individual}")
+    print(f"validation: has={has_val}, frac={val_frac}, n_splits={val_n_splits}, seed={val_seed}")
 
 
 if __name__ == "__main__":

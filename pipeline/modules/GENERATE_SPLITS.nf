@@ -20,6 +20,7 @@ process GENERATE_SPLITS {
     path "splits_summary.txt", emit: summary
     path "dataset_options.txt", emit: dataset_options
     path "parallel_options.txt", emit: parallel_options
+    path "validation_options.txt", emit: validation_options
 
     script:
     """

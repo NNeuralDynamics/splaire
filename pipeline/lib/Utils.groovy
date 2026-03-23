@@ -58,4 +58,20 @@ class Utils {
         def modes = [single: 'basic', het: 'het', paired: 'basic', pop: 'pop']
         return modes[variant_type] ?: 'basic'
     }
+
+    // parse validation_options.txt from GENERATE_SPLITS
+    static Map parseValidationOpts(file) {
+        def m = [:]
+        file.text.trim().split('\n').each { line ->
+            def p = line.split('=', 2)
+            if (p.size() == 2) m[p[0]] = p[1]
+        }
+        return [
+            has_validation: m.has_validation == 'True',
+            frac: (m.frac ?: '0.10') as float,
+            n_splits: (m.n_splits ?: '5') as int,
+            seed: (m.seed ?: '42') as int,
+            exclude_chroms: m.exclude_chroms ?: ''
+        ]
+    }
 }

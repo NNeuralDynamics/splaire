@@ -3,7 +3,7 @@
 # train: ALL paralogs from ALL chr + non-paralogs from chr2,4,6,8-22 (100 samples)
 
 samples:
-  test_file: ${projectDir}/configs/haec/test_samples82.txt
+  test_file: ${projectDir}/configs/haec/haec10_test.txt
   train_file: ${projectDir}/configs/haec/train_samples100.txt
 
 chromosomes:
@@ -46,3 +46,11 @@ fill_gencode:
   train: true
   valid: true
   test: false
+
+# transcript-level train/validation splitting for replicate training
+# frac is relative to total training rows (paralogs + non-paralogs)
+# validation drawn from non-paralogs only, paralogs always stay in training
+validation:
+  frac: 0.10
+  n_splits: 5
+  seed: 42
