@@ -18,7 +18,15 @@ DATA=<dir_with_splice_tables>
 OUT=<output_dir>
 ```
 
-`DATA` should contain the splice tables (these are `combined_gene_variants_SNVs_sites.tsv` from the pipeline `combined/` output, renamed per tissue):
+`DATA` should contain the splice tables.
+
+**northeastern cluster** — files are already at `/scratch/runyan.m/splice_tables/`:
+
+```bash
+DATA=/scratch/runyan.m/splice_tables
+```
+
+the splice tables are `combined_gene_variants_SNVs_sites.tsv` from the pipeline `combined/` output, renamed per tissue:
 
 ```
 brain_cortex_splice_table.tsv
