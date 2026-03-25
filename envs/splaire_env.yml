@@ -36,3 +36,4 @@ dependencies:
       - polars-lts-cpu==1.33.1
       - tangermeme==1.0.0
       - logomaker==0.8.7
+      - pyyaml==6.0.3   
