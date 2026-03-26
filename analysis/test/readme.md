@@ -26,6 +26,15 @@ OUT=<output_dir>
 DATA=/scratch/runyan.m/splice_tables
 ```
 
+**external users** — download from Zenodo:
+
+```bash
+mkdir -p ${DATA} && cd ${DATA}
+wget https://zenodo.org/records/19136478/files/splice_tables.tar
+tar xf splice_tables.tar
+gunzip splice_tables/*.gz
+```
+
 the splice tables are `combined_gene_variants_SNVs_sites.tsv` from the pipeline `combined/` output, renamed per tissue:
 
 ```
@@ -209,15 +218,50 @@ sbatch score_mane.sbatch ${OUT}/canonical/mane_select
 
 ### pangolin
 
-uses pangolin's test splice table for tissue-specific comparison. download first:
+uses pangolin's test splice table for tissue-specific comparison. each tissue is built and scored separately since the splice table defines tissue-specific labels. uses `--splice-combined` for metrics since pangolin labels all splice sites as both acceptor and donor.
+
+download the splice table:
 
 ```bash
 cd ${REPO}/analysis/test
 curl -L -o data/splice_table_Human.test.txt \
     https://raw.githubusercontent.com/tkzeng/Pangolin_train/main/preprocessing/splice_table_Human.test.txt
+```
 
+build h5 datasets (CPU, one per tissue):
+
+```bash
+for tissue in heart liver brain testis; do
+    sbatch -J build_pang_${tissue} build_pangolin.sbatch \
+        ${OUT}/canonical/pangolin $tissue
+done
+```
+
+this converts the splice table to a per-tissue matrix (`pangolin_to_matrix.py`), then builds an h5 via `pipeline/src/build_h5.py`. output: `${OUT}/canonical/pangolin/${tissue}.h5`
+
+score all models and compute metrics (GPU, one per tissue):
+
+```bash
 for tissue in heart liver brain testis; do
     sbatch -J pang_${tissue} score_pangolin.sbatch \
         ${OUT}/canonical/pangolin $tissue
 done
+```
+
+each job scores with splaire, spliceai, pangolin, and splicetransformer, then runs `compute_metrics.py --splice-combined`. output:
+
+```
+${OUT}/canonical/pangolin/
+├── heart.h5                    # input h5
+├── heart_matrix.tsv            # intermediate tissue matrix
+├── heart_metrics.json          # metrics
+├── predictions/
+│   ├── heart_splaire_ref.parquet
+│   ├── heart_splaire_var.parquet
+│   ├── heart_sa.parquet
+│   ├── heart_pang.parquet
+│   └── heart_spt.parquet
+├── liver.h5
+├── liver_metrics.json
+└── ...
 ```

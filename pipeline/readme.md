@@ -26,7 +26,14 @@ OUT=<output_dir>
 DATA=/scratch/runyan.m/splice_tables
 ```
 
-**external users** — download from Zenodo (link available after publication)
+**external users** — download from Zenodo:
+
+```bash
+mkdir -p ${DATA} && cd ${DATA}
+wget https://zenodo.org/records/19136478/files/splice_tables.tar
+tar xf splice_tables.tar
+gunzip splice_tables/*.gz
+```
 
 this extracts:
 
