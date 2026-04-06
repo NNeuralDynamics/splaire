@@ -387,8 +387,11 @@ def process_record(data1, data2, encoding_mode, remove_missing):
     return create_datapoints(**kwargs)
 
 
-def create_dataset_h5(df, var_seqs, output_path, split_mode, paralog, encoding_mode, make_gc, remove_missing, skip_empty=False):
+def create_dataset_h5(df, var_seqs, output_path, split_mode, paralog, encoding_mode, make_gc, remove_missing, skip_empty=False, force_gc=False):
     logging.info(f"create_dataset: building h5 for {len(df)} records (skip_empty={skip_empty})")
+
+    # force_gc: always write gc even if make_gc is off, needed for split_h5
+    write_gc = make_gc or force_gc
 
     with h5py.File(output_path, 'w') as h5f:
         buffer_x, buffer_y, buffer_gc = [], [], []
@@ -418,14 +421,14 @@ def create_dataset_h5(df, var_seqs, output_path, split_mode, paralog, encoding_m
                     n_windows_kept += has_site.sum()
                     x = x[has_site]
                     y = y[has_site]
-                    if make_gc and gc is not None:
+                    if write_gc and gc is not None:
                         gc = gc[has_site]
                     if len(x) == 0:
                         continue
 
                 buffer_x.extend(x)
                 buffer_y.extend(y)
-                if make_gc and gc is not None:
+                if write_gc and gc is not None:
                     buffer_gc.extend(gc)
                 processed += 1
             except Exception as e:
@@ -438,7 +441,7 @@ def create_dataset_h5(df, var_seqs, output_path, split_mode, paralog, encoding_m
                 y_array = np.asarray(buffer_y, dtype='float32')
                 h5f.create_dataset(f"X{chunk_idx}", data=x_array, compression="gzip", compression_opts=4)
                 h5f.create_dataset(f"Y{chunk_idx}", data=y_array, compression="gzip", compression_opts=4)
-                if make_gc and buffer_gc:
+                if write_gc and buffer_gc:
                     gc_array = np.asarray(buffer_gc, dtype=GC_DTYPE)
                     h5f.create_dataset(f"GC{chunk_idx}", data=gc_array, compression="gzip", compression_opts=4)
                 chunk_idx += 1
@@ -452,7 +455,7 @@ def create_dataset_h5(df, var_seqs, output_path, split_mode, paralog, encoding_m
             y_array = np.asarray(buffer_y, dtype='float32')
             h5f.create_dataset(f"X{chunk_idx}", data=x_array, compression="gzip", compression_opts=4)
             h5f.create_dataset(f"Y{chunk_idx}", data=y_array, compression="gzip", compression_opts=4)
-            if make_gc and buffer_gc:
+            if write_gc and buffer_gc:
                 gc_array = np.asarray(buffer_gc, dtype=GC_DTYPE)
                 h5f.create_dataset(f"GC{chunk_idx}", data=gc_array, compression="gzip", compression_opts=4)
 
@@ -469,7 +472,7 @@ def create_dataset_h5(df, var_seqs, output_path, split_mode, paralog, encoding_m
 def main():
     parser = argparse.ArgumentParser(description="build h5 dataset for a single donor")
     parser.add_argument("--donor", required=True, help="donor ID (e.g. GTEX-12WSH)")
-    parser.add_argument("--split", required=True, choices=["train", "valid", "test"], help="dataset split")
+    parser.add_argument("--split", required=True, choices=["train", "valid", "test", "full"], help="dataset split")
     parser.add_argument("--input", required=True, help="input enriched matrix TSV")
     parser.add_argument("--chroms", required=True, help="comma-separated chromosomes")
     parser.add_argument("--fasta", required=True, help="reference genome FASTA")
@@ -533,11 +536,13 @@ def main():
     seqs = ref_seqs if args.reference else var_seqs
 
     # step 5: create dataset
+    # full builds always need gc so split_h5 can read transcript ids
+    force_gc = args.split == 'full'
     n_records = create_dataset_h5(
         df, seqs, args.output,
         args.split, args.paralog, args.mode,
         args.make_gc, args.remove_missing,
-        args.skip_empty_windows
+        args.skip_empty_windows, force_gc
     )
 
     logger.info(f"build_donor_dataset complete: {n_records} records written")

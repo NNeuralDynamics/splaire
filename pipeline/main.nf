@@ -19,6 +19,7 @@ include { FILL_GENCODE }      from './modules/FILL_GENCODE.nf'
 include { GENERATE_SPLITS }           from './modules/GENERATE_SPLITS.nf'
 include { GENERATE_TRAIN_VAL_SPLITS } from './modules/GENERATE_TRAIN_VAL_SPLITS.nf'
 include { BUILD_H5 }                  from './modules/BUILD_H5.nf'
+include { SPLIT_H5 }                  from './modules/SPLIT_H5.nf'
 include { COMBINE_H5 }                from './modules/COMBINE_H5.nf'
 
 
@@ -251,7 +252,7 @@ workflow build_datasets {
             jobs
         }
 
-    // validation-split jobs: transcript-level train/valid from GENERATE_TRAIN_VAL_SPLITS
+    // validation-split jobs: build full h5 per donor, then split by fold
     // only runs when validation config is present
     val_split_jobs = split_config.validation_options
         .combine(split_config.train_samples)
@@ -260,9 +261,29 @@ workflow build_datasets {
         .flatMap { val_opts_file, train_samp, opts_file, filled ->
             def val_opts = Utils.parseValidationOpts(val_opts_file)
             if (!val_opts.has_validation) return []
-
-            // emit a single trigger to launch the splitting process
             [tuple(val_opts, train_samp, opts_file, filled)]
+        }
+
+    // build one full h5 per train donor (all transcripts, all train chroms)
+    // always uses filled matrix since fold tsvs come from the same filled matrix
+    full_build_jobs = val_split_jobs
+        .combine(split_config.train_chroms)
+        .flatMap { val_opts, train_samp, opts_file, filled, train_chr ->
+            def opts = Utils.parseDatasetOpts(opts_file)
+            def encoding = Utils.getEncodingMode(opts.variant)
+            def chrom_str = Utils.chromsToString(train_chr)
+
+            Utils.extractDonors(train_samp).collect { donor ->
+                tuple([
+                    donor: donor, split: 'full', build_split: 'train',
+                    output_prefix: 'full', chroms: chrom_str,
+                    encoding_mode: encoding, paralog: 'all',
+                    make_gc: true,
+                    remove_missing: opts.remove_missing,
+                    asymmetric_paralog: opts.asymmetric_paralog,
+                    reference: opts.reference
+                ], filled)
+            }
         }
 
     // run transcript-level splitting (produces N train + N valid tsvs)
@@ -280,42 +301,43 @@ workflow build_datasets {
         val_input.matrix, val_input.frac, val_input.n_splits, val_input.seed, val_input.exclude
     )
 
-    // expand per-split tsvs into per-donor BUILD_H5 jobs
-    val_donor_jobs = val_tsvs.train_tsvs.flatten()
+    // collect all fold tsvs into a single list for split_h5
+    all_fold_tsvs = val_tsvs.train_tsvs.flatten()
         .mix(val_tsvs.valid_tsvs.flatten())
-        .combine(split_config.train_samples)
-        .combine(split_config.dataset_options)
-        .flatMap { tsv, train_samp, opts_file ->
-            def opts = Utils.parseDatasetOpts(opts_file)
-            def encoding = Utils.getEncodingMode(opts.variant)
-            // parse split number and type from filename
-            def m = (tsv.name =~ /split(\d+)_(train|validation)\.tsv/)
-            def split_num = m[0][1]
-            def split_type = m[0][2] == 'validation' ? 'valid' : 'train'
-            def prefix = "${split_type}_split${split_num}"
-            // all autosomes (tsv is already chrom-filtered)
-            def all_auto = (1..22).collect { "chr${it}" }.join(',')
+        .collect()
 
-            Utils.extractDonors(train_samp).collect { donor ->
-                tuple([
-                    donor: donor, split: prefix, build_split: split_type,
-                    output_prefix: prefix, chroms: all_auto,
-                    encoding_mode: encoding, paralog: 'all',
-                    make_gc: opts.make_gc, remove_missing: opts.remove_missing,
-                    asymmetric_paralog: false,
-                    reference: opts.reference
-                ], tsv)
-            }
-        }
-
-    // merge all jobs and build
-    all_jobs = standard_jobs.mix(val_donor_jobs)
+    // build full h5s, then split by fold
+    all_jobs = standard_jobs.mix(full_build_jobs)
     donor_h5s = BUILD_H5(all_jobs)
 
-    // group by output_prefix and combine
-    by_split = donor_h5s
+    // separate full builds from standard (test) builds
+    full_h5s = donor_h5s.filter { job, h5 -> job.split == 'full' }
+    standard_h5s = donor_h5s.filter { job, h5 -> job.split != 'full' }
+
+    // pair each donor's full h5 with the fold tsvs and split
+    split_input = full_h5s
+        .map { job, h5 -> tuple(job.donor, h5) }
+        .combine(all_fold_tsvs)
+    split_h5s = SPLIT_H5(split_input)
+
+    // flatten split outputs and group by fold name for combine
+    val_by_split = split_h5s
+        .flatMap { donor, h5s ->
+            h5s.collect { h5 ->
+                // strip _DONOR.h5 suffix to get fold name like "train_split1"
+                def prefix = h5.name.replace("_${donor}.h5", '')
+                tuple(prefix, h5)
+            }
+        }
+        .groupTuple()
+
+    // group standard builds (test) for combine
+    standard_by_split = standard_h5s
         .map { job, h5 -> tuple(job.output_prefix ?: job.split, h5) }
         .groupTuple()
+
+    // merge and combine
+    by_split = standard_by_split.mix(val_by_split)
         .multiMap { split, files -> h5s: files; name: split }
 
     COMBINE_H5(by_split.h5s, by_split.name)
