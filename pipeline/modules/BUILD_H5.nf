@@ -6,7 +6,7 @@ nextflow.enable.dsl=2
 process BUILD_H5 {
     tag "${job.output_prefix ?: job.split}_${job.donor}"
     label 'process_high'
-    publishDir "${params.dataset_out_dir ?: params.output_dir + '/ml_data'}/individual", mode: 'copy', pattern: "*.h5"
+    publishDir "${params.dataset_out_dir ?: params.output_dir + '/ml_data'}/individual", mode: 'move', pattern: "*.h5"
 
     input:
     tuple val(job), path(input_tsv)

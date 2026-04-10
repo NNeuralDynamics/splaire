@@ -3,7 +3,7 @@ nextflow.enable.dsl=2
 process FILL_SSU {
     tag "$meta.id"
     label 'process_medium'
-    publishDir "${params.output_dir}/${meta.id}/spliser", mode: 'copy'
+    publishDir "${params.output_dir}/${meta.id}/spliser", mode: 'move'
 
     input:
     tuple val(meta), path(spliser_tsv), path(filtered_bam), path(filtered_bam_index), path(master_sites)

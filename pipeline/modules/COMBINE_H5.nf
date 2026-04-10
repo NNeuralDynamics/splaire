@@ -3,7 +3,7 @@ nextflow.enable.dsl=2
 process COMBINE_H5 {
     tag "$output_name"
     label 'process_high'
-    publishDir "${params.dataset_out_dir ?: params.output_dir + '/ml_data'}", mode: 'copy'
+    publishDir "${params.dataset_out_dir ?: params.output_dir + '/ml_data'}", mode: 'move'
 
     input:
     path h5_files

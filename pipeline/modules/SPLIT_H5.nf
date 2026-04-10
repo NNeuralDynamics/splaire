@@ -6,7 +6,7 @@ nextflow.enable.dsl=2
 process SPLIT_H5 {
     tag "${donor}"
     label 'process_low'
-    publishDir "${params.dataset_out_dir ?: params.output_dir + '/ml_data'}/individual", mode: 'copy', pattern: "*.h5"
+    publishDir "${params.dataset_out_dir ?: params.output_dir + '/ml_data'}/individual", mode: 'move', pattern: "*.h5"
 
     input:
     tuple val(donor), path(full_h5), path(fold_tsvs)
