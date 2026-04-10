@@ -9,7 +9,7 @@ process BUILD_H5 {
     publishDir "${params.dataset_out_dir ?: params.output_dir + '/ml_data'}/individual", mode: 'move', pattern: "*.h5"
 
     input:
-    tuple val(job), path(input_tsv)
+    tuple val(job), val(input_tsv)
 
     output:
     tuple val(job), path("${job.output_prefix ?: job.split}_${job.donor}.h5")
@@ -21,7 +21,7 @@ process BUILD_H5 {
     def prefix = job.output_prefix ?: job.split
     def chromArg = job.chrom_file ? file(job.chrom_file).text.trim().split('\n').join(',') : job.chroms
     def fastaPath = params.dataset_fasta ?: params.genome_fasta
-    def workDir = "${params.dataset_work_dir ?: params.output_dir + '/ml_work'}/${prefix}_${job.donor}"
+    def workDir = "."
     def logDir = "${params.logs_dir}/ml_data"
     def makeGcFlag = job.make_gc ? "--make-gc" : ""
     def rmFlag = job.remove_missing ? "--remove-missing" : ""

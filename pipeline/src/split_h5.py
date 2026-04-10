@@ -41,11 +41,11 @@ def flush_chunk(h5f, buf_x, buf_y, buf_gc, chunk_idx, keep_gc):
     """write buffered arrays as a chunk"""
     x = np.concatenate(buf_x, axis=0)
     y = np.concatenate(buf_y, axis=0)
-    h5f.create_dataset(f"X{chunk_idx}", data=x, compression="gzip", compression_opts=4)
-    h5f.create_dataset(f"Y{chunk_idx}", data=y, compression="gzip", compression_opts=4)
+    h5f.create_dataset(f"X{chunk_idx}", data=x, compression="gzip", compression_opts=9)
+    h5f.create_dataset(f"Y{chunk_idx}", data=y, compression="gzip", compression_opts=9)
     if keep_gc and buf_gc:
         gc = np.concatenate(buf_gc, axis=0)
-        h5f.create_dataset(f"GC{chunk_idx}", data=gc, compression="gzip", compression_opts=4)
+        h5f.create_dataset(f"GC{chunk_idx}", data=gc, compression="gzip", compression_opts=9)
     return chunk_idx + 1
 
 

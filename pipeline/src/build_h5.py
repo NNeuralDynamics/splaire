@@ -439,11 +439,11 @@ def create_dataset_h5(df, var_seqs, output_path, split_mode, paralog, encoding_m
             if len(buffer_x) >= CHUNK_SIZE:
                 x_array = np.asarray(buffer_x, dtype='float32')
                 y_array = np.asarray(buffer_y, dtype='float32')
-                h5f.create_dataset(f"X{chunk_idx}", data=x_array, compression="gzip", compression_opts=4)
-                h5f.create_dataset(f"Y{chunk_idx}", data=y_array, compression="gzip", compression_opts=4)
+                h5f.create_dataset(f"X{chunk_idx}", data=x_array, compression="gzip", compression_opts=9)
+                h5f.create_dataset(f"Y{chunk_idx}", data=y_array, compression="gzip", compression_opts=9)
                 if write_gc and buffer_gc:
                     gc_array = np.asarray(buffer_gc, dtype=GC_DTYPE)
-                    h5f.create_dataset(f"GC{chunk_idx}", data=gc_array, compression="gzip", compression_opts=4)
+                    h5f.create_dataset(f"GC{chunk_idx}", data=gc_array, compression="gzip", compression_opts=9)
                 chunk_idx += 1
                 buffer_x.clear()
                 buffer_y.clear()
@@ -453,11 +453,11 @@ def create_dataset_h5(df, var_seqs, output_path, split_mode, paralog, encoding_m
         if buffer_x:
             x_array = np.asarray(buffer_x, dtype='float32')
             y_array = np.asarray(buffer_y, dtype='float32')
-            h5f.create_dataset(f"X{chunk_idx}", data=x_array, compression="gzip", compression_opts=4)
-            h5f.create_dataset(f"Y{chunk_idx}", data=y_array, compression="gzip", compression_opts=4)
+            h5f.create_dataset(f"X{chunk_idx}", data=x_array, compression="gzip", compression_opts=9)
+            h5f.create_dataset(f"Y{chunk_idx}", data=y_array, compression="gzip", compression_opts=9)
             if write_gc and buffer_gc:
                 gc_array = np.asarray(buffer_gc, dtype=GC_DTYPE)
-                h5f.create_dataset(f"GC{chunk_idx}", data=gc_array, compression="gzip", compression_opts=4)
+                h5f.create_dataset(f"GC{chunk_idx}", data=gc_array, compression="gzip", compression_opts=9)
 
     if skip_empty:
         logging.info(f"create_dataset: skip_empty kept {n_windows_kept:,} windows, skipped {n_windows_skipped:,}")
