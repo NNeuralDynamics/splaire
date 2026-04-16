@@ -23,15 +23,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device_str = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def load_groups():
+def load_groups(v2=False):
+    n_reps = 3 if v2 else 5
+    suffix = ".v2" if v2 else ""
     groups = {}
     for mn in tqdm(list(range(8)), desc="load pangolin"):
         reps = []
-        for rep in range(1, 6):
+        for rep in range(1, n_reps + 1):
             m = Pangolin(L, W, AR).to(device).eval()
             if use_compile and hasattr(torch, "compile"):
                 m = torch.compile(m, mode="reduce-overhead", fullgraph=False)
-            w = torch.load(resource_filename("pangolin", f"models/final.{rep}.{mn}.3"), map_location=device)
+            w = torch.load(resource_filename("pangolin", f"models/final.{rep}.{mn}.3{suffix}"), map_location=device)
             m.load_state_dict(w)
             reps.append(m)
         groups[mn] = reps
@@ -61,7 +63,11 @@ def main():
     p.add_argument("--input", required=True, help="input h5 file with pre-encoded sequences")
     p.add_argument("--output", required=True, help="output h5 file for scores")
     p.add_argument("--batch-size", type=int, default=target_bs)
+    p.add_argument("--v2", action="store_true", help="use v2 weights (human-finetuned, 3 reps)")
     args = p.parse_args()
+
+    if args.v2:
+        print("using v2 weights (human-finetuned, 3 reps)")
 
     assert os.path.exists(args.input), f"input not found: {args.input}"
 
@@ -83,7 +89,7 @@ def main():
     print(f"  {n:,} variants")
 
     # load models
-    groups = load_groups()
+    groups = load_groups(v2=args.v2)
 
     # score each site/allele combination
     combos = [
