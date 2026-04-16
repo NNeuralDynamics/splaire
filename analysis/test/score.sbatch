@@ -35,16 +35,16 @@ for h5 in "$input_dir"/*.h5; do
     pred_dir="$output_dir/predictions/$donor"
     mkdir -p "$pred_dir"
 
-    conda activate splaire_env
+    conda activate ${SPLAIRE_ENV:-splaire_env}
     python "$script_dir/src/score_splaire.py" "$h5" "$pred_dir" --ref --var --prefix "${donor}_splaire" --batch-size 6456
 
-    conda activate sa_env
+    conda activate ${SA_ENV:-sa_env}
     python "$script_dir/src/score_spliceai.py" "$h5" "$pred_dir/${donor}_sa.parquet" --batch-size 32
 
-    conda activate pang_env
+    conda activate ${PANG_ENV:-pang_env}
     python "$script_dir/src/score_pangolin.py" "$h5" "$pred_dir/${donor}_pang.parquet" --batch-size 6456
 
-    conda activate spt-test
+    conda activate ${SPT_ENV:-spt-test}
     python "$script_dir/src/score_splicetransformer.py" "$h5" "$pred_dir/${donor}_spt.parquet" --batch-size 64
 
     # mark complete after all models succeed
