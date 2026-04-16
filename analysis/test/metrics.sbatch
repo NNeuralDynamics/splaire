@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=metrics
 #SBATCH --partition=short
-#SBATCH --time=24:00:00
-#SBATCH --mem=80G
-#SBATCH --cpus-per-task=4
+#SBATCH --time=12:00:00
+#SBATCH --mem=64G
+#SBATCH --cpus-per-task=8
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 
@@ -18,7 +18,8 @@ shift 2
 script_dir="$repo_root/analysis/test"
 
 source ~/.bashrc
-conda activate splaire_env
+conda activate /scratch/runyan.m/conda_envs/splaire_env
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
 set -eo pipefail
 mkdir -p "$(dirname "$output_json")" logs
 

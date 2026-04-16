@@ -40,7 +40,7 @@ pred_dir="$output_dir/predictions"
 
 echo "scoring with SplAIRE..."
 conda activate splaire_env
-python "$script_dir/score_splaire.py" "$tissue_h5" "$pred_dir" --ref --var --prefix "${tissue}_splaire" --batch-size 6456
+python "$script_dir/score_splaire.py" "$tissue_h5" "$pred_dir" --ref --var --prefix "${tissue}_splaire" --batch-size 96
 
 echo "scoring with SpliceAI..."
 conda activate sa_env
@@ -48,7 +48,7 @@ python "$script_dir/score_spliceai.py" "$tissue_h5" "$pred_dir/${tissue}_sa.parq
 
 echo "scoring with Pangolin..."
 conda activate pang_env
-python "$script_dir/score_pangolin.py" "$tissue_h5" "$pred_dir/${tissue}_pang.parquet" --batch-size 6456
+python "$script_dir/score_pangolin.py" "$tissue_h5" "$pred_dir/${tissue}_pang.parquet" --batch-size 96
 
 echo "scoring with SpliceTransformer..."
 conda activate spt-test

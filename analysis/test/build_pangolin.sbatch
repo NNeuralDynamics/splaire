@@ -2,7 +2,7 @@
 #SBATCH --job-name=build_pangolin
 #SBATCH --partition=short
 #SBATCH --time=2:00:00
-#SBATCH --mem=32G
+#SBATCH --mem=16G
 #SBATCH --cpus-per-task=4
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
