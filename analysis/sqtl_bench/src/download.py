@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""download required data for sqtl benchmark
-
-usage: python download.py --out-dir /path/to/data [--workers 8]
-
-downloads:
-  - reference files (gencode, gtex tpm, tabix index)
-  - txrevise: credible sets + full summary stats (49 tissues)
-  - leafcutter: credible sets + full summary stats + phenotype metadata (49 tissues)
-  - ge: credible sets + full summary stats (49 tissues)
-  - leafcutter phenotype metadata from zenodo (complete intron lists per tissue)
-"""
+"""download eqtl catalogue data for sqtl benchmark"""
 import argparse
 import subprocess
 import time

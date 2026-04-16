@@ -1,16 +1,5 @@
 #!/usr/bin/env python3
-"""make leafcutter ambig benchmark vcfs
-
-ambiguous credible sets: max pip < 0.9, multiple candidate variants
-does model ranking agree with fine-mapping pip ranking
-
-filters:
-- max pip < 0.9 (ambiguous)
-- 2-10 variants per cs
-- intron within gene bounds
-- all variants are snvs
-- all variants within 5kb of both donor/acceptor
-"""
+"""ambiguous credible set benchmark — max pip < 0.9, 2-10 snvs per cs"""
 import argparse
 import gzip
 from pathlib import Path

@@ -12,11 +12,14 @@ set -euo pipefail
 PIPELINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="${PIPELINE_DIR}/src"
 
-# paths to set before running
-SPLITS_DIR="${SPLITS_DIR:-/scratch/runyan.m/splits}"
+# paths — all env-var-overridable. external users: set SPLAIRE_DATA_DIR (root for data+outputs)
+# or override individual vars (SPLITS_DIR, OUTPUT_BASE) directly
+: "${SPLAIRE_DATA_DIR:=/scratch/runyan.m}"
+: "${SPLAIRE_CONDA_ENV:=sp}"
+SPLITS_DIR="${SPLITS_DIR:-${SPLAIRE_DATA_DIR}/splits}"
 SAMPLE_FILE="${SAMPLE_FILE:-${PIPELINE_DIR}/configs/haec/train_samples100.txt}"
 FASTA="${FASTA:-${PIPELINE_DIR}/reference/GRCh38/GRCh38.primary_assembly.genome.fa}"
-OUTPUT_BASE="${OUTPUT_BASE:-/scratch/runyan.m/split_h5}"
+OUTPUT_BASE="${OUTPUT_BASE:-${SPLAIRE_DATA_DIR}/split_h5}"
 
 N_SPLITS=5
 CHROMS="chr1,chr2,chr3,chr4,chr5,chr6,chr7,chr8,chr9,chr10,chr11,chr12,chr13,chr14,chr15,chr16,chr17,chr18,chr19,chr20,chr21,chr22"
@@ -62,7 +65,7 @@ for SPLIT in $(seq 1 ${N_SPLITS}); do
         --output="${SPLIT_OUT}/logs/train_%A_%a.out" \
         --error="${SPLIT_OUT}/logs/train_%A_%a.err" \
         --wrap="
-            source ~/.bashrc && conda activate sp && module load bedtools
+            source ~/.bashrc && conda activate ${SPLAIRE_CONDA_ENV} && module load bedtools
             DONOR=\$(sed -n \"\$((SLURM_ARRAY_TASK_ID + 1))p\" ${SAMPLE_FILE})
             python ${SRC_DIR}/build_h5.py \
                 --donor \${DONOR} \
@@ -91,7 +94,7 @@ for SPLIT in $(seq 1 ${N_SPLITS}); do
         --output="${SPLIT_OUT}/logs/valid_%A_%a.out" \
         --error="${SPLIT_OUT}/logs/valid_%A_%a.err" \
         --wrap="
-            source ~/.bashrc && conda activate sp && module load bedtools
+            source ~/.bashrc && conda activate ${SPLAIRE_CONDA_ENV} && module load bedtools
             DONOR=\$(sed -n \"\$((SLURM_ARRAY_TASK_ID + 1))p\" ${SAMPLE_FILE})
             python ${SRC_DIR}/build_h5.py \
                 --donor \${DONOR} \
@@ -118,7 +121,7 @@ for SPLIT in $(seq 1 ${N_SPLITS}); do
         --output="${SPLIT_OUT}/logs/combine_train_%j.out" \
         --error="${SPLIT_OUT}/logs/combine_train_%j.err" \
         --wrap="
-            source ~/.bashrc && conda activate sp && module load bedtools
+            source ~/.bashrc && conda activate ${SPLAIRE_CONDA_ENV} && module load bedtools
             python ${SRC_DIR}/combine_h5.py \
                 --input_dir ${TRAIN_DIR} \
                 --pattern '*.h5' \
@@ -134,7 +137,7 @@ for SPLIT in $(seq 1 ${N_SPLITS}); do
         --output="${SPLIT_OUT}/logs/combine_valid_%j.out" \
         --error="${SPLIT_OUT}/logs/combine_valid_%j.err" \
         --wrap="
-            source ~/.bashrc && conda activate sp && module load bedtools
+            source ~/.bashrc && conda activate ${SPLAIRE_CONDA_ENV} && module load bedtools
             python ${SRC_DIR}/combine_h5.py \
                 --input_dir ${VALID_DIR} \
                 --pattern '*.h5' \

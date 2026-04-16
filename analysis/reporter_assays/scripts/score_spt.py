@@ -99,8 +99,7 @@ def main():
             i = k * args.batch_size
             j = min((k + 1) * args.batch_size, n)
 
-            # trim to 8001bp (4000 each side) - SPT uses 4000bp context not 5000bp
-            # input is 10001bp centered, trim 1000bp from each end
+            # trim to 8001bp — spt context is 4000bp not 5000bp
             batch = X_all[i:j, 1000:-1000, :]
 
             # transpose from (B, L, 4) to (B, 4, L) for splicetransformer

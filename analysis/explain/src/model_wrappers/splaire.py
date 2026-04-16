@@ -1,12 +1,4 @@
-"""
-sphaec model wrapper for attribution analysis
-
-loads full pytorch models (_full.pt) - no TensorFlow needed.
-falls back to keras conversion if full model not found.
-
-input: (batch, 4, length) one-hot dna
-output: (batch, 1) for attribution
-"""
+"""splaire wrapper for attribution — loads _full.pt, falls back to keras conversion"""
 
 import os
 import sys
@@ -50,7 +42,7 @@ def load_sphaec_model(model_path, device="cuda"):
 
 
 class SpHAECRegHead(nn.Module):
-    """wrap regression model to output center as (batch, 1)"""
+    # regression center output as (batch, 1)
 
     def __init__(self, model):
         super().__init__()
@@ -65,7 +57,7 @@ class SpHAECRegHead(nn.Module):
 
 
 class SpHAECClsHead(nn.Module):
-    """wrap classification model for specific class"""
+    # classification center output for a single class
 
     def __init__(self, model, class_idx):
         super().__init__()

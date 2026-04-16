@@ -111,7 +111,7 @@ def load_model_heads(model_name, device, heads=None):
         heads = default_heads
 
     if model_type == "splaire":
-        from model_wrappers.sphaec import load_sphaec_model, get_head
+        from model_wrappers.splaire import load_sphaec_model, get_head
         keras_path = os.path.join(models_dir, model_file)
         model = load_sphaec_model(keras_path, device)
         return {h: get_head(model, h).to(device).eval() for h in heads}
