@@ -56,7 +56,9 @@ bash score.sh ambig
 
 ## 4. analyze
 
-open `sqtl_benchmark_analysis.ipynb`, restart kernel and run all
+```bash
+python analysis.py
+```
 
 ## credible set companions (separate from main benchmark)
 
