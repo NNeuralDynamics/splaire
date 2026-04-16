@@ -126,17 +126,32 @@ def extract_sequences(vcf_df, fasta_path, seq_len=20001):
         ref, alt = row["ref"], row["alt"]
         strand = row.get("ST", "+") if has_strand else "+"
 
-        start = pos - half - 1
+        ref_len = len(ref)
+        alt_len = len(alt)
+
+        start = pos - half - 1  # 0-based
         end = pos + half
         seq = fasta.fetch(chrom, start, end).upper()
 
         if len(seq) != seq_len:
             raise ValueError(f"seq length {len(seq)} != {seq_len} at {chrom}:{pos}")
         center = half
-        if seq[center] != ref.upper():
-            raise ValueError(f"ref mismatch at {chrom}:{pos}: expected {ref}, got {seq[center]}")
+        if seq[center:center + ref_len].upper() != ref.upper():
+            raise ValueError(f"ref mismatch at {chrom}:{pos}: expected {ref}, got {seq[center:center + ref_len]}")
 
-        alt_seq = seq[:center] + alt.upper() + seq[center + 1:]
+        # build alt seq: replace ref span with alt, pad/trim right to keep seq_len
+        alt_seq = seq[:center] + alt.upper() + seq[center + ref_len:]
+        diff = alt_len - ref_len
+        if diff < 0:
+            # deletion — alt_seq is short, fetch extra from right
+            extra = fasta.fetch(chrom, end, end + abs(diff)).upper()
+            alt_seq = alt_seq + extra
+        elif diff > 0:
+            # insertion — alt_seq is long, trim from right
+            alt_seq = alt_seq[:seq_len]
+
+        if len(alt_seq) != seq_len:
+            raise ValueError(f"alt seq length {len(alt_seq)} != {seq_len} at {chrom}:{pos}")
 
         # reverse complement for - strand so model sees transcript direction
         if strand == "-":

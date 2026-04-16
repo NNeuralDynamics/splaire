@@ -2,6 +2,7 @@
 """score sqtl vcf with pangolin models
 
 usage: python score_pang.py input.vcf.gz reference.fa output.h5
+       python score_pang.py input.vcf.gz reference.fa output.h5 --v2
 """
 import sys
 import argparse
@@ -39,7 +40,13 @@ def main():
     ap.add_argument("fasta")
     ap.add_argument("output_h5")
     ap.add_argument("--batch-size", type=int, default=batch_size)
+    ap.add_argument("--v2", action="store_true", help="use v2 weights (human-finetuned, 3 reps)")
     args = ap.parse_args()
+
+    n_reps = 3 if args.v2 else 5
+    weight_suffix = ".v2" if args.v2 else ""
+    if args.v2:
+        print("using v2 weights (human-finetuned, 3 reps)", flush=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}", flush=True)
@@ -65,9 +72,9 @@ def main():
     models = {}
     for task_id in tasks.keys():
         reps = []
-        for rep in range(1, 6):
+        for rep in range(1, n_reps + 1):
             m = Pangolin(L, W, AR).to(device).eval()
-            path = resource_filename("pangolin", f"models/final.{rep}.{task_id}.3")
+            path = resource_filename("pangolin", f"models/final.{rep}.{task_id}.3{weight_suffix}")
             m.load_state_dict(torch.load(path, map_location=device))
             reps.append(m)
         models[task_id] = reps
@@ -88,7 +95,7 @@ def main():
                         yb = model(xb)[:, channel, :].cpu().numpy()
                     preds[i:j] += yb
 
-            preds /= 5
+            preds /= n_reps
             results[f"{prefix}_{task_name}"] = preds
 
     # reverse outputs for - strand variants to align with genomic coordinates
@@ -101,7 +108,7 @@ def main():
     print(f"writing {args.output_h5}", flush=True)
     with h5py.File(args.output_h5, "w") as f:
         for name, data in results.items():
-            f.create_dataset(name, data=data, compression="gzip")
+            f.create_dataset(name, data=data, compression=None)
 
         str_dt = h5py.special_dtype(vlen=str)
         f.create_dataset("var_key", data=vcf_df["var_key"].values.astype(object), dtype=str_dt)

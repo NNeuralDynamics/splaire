@@ -1,15 +1,22 @@
 #!/bin/bash
 # submit gpu scoring jobs to slurm
-# usage: bash score.sh [txrevise|leafcutter|haec|ambig|cs_txrevise|cs_leafcutter|cs_haec|cs_all|all]
+# usage: bash score.sh [mode] [--after JOBID]
+#   e.g.: bash score.sh haec --after 12345
+#         bash score.sh pip50 --after 12345:12346:12347
 set -e
 
 mode=${1:-all}
+DEP=""
+if [ "$2" = "--after" ] && [ -n "$3" ]; then
+    DEP="--dependency=afterok:$3"
+    echo "scoring will wait for job(s): $3"
+fi
 
 # config — set these before running
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 src="$(cd "$(dirname "$0")" && pwd)/src"
-data_dir=""                  # output/working directory for benchmark data
-spt_dir=""                   # path to SpliceTransformer repo
+data_dir="/scratch/runyan.m/sqtl_bench"
+spt_dir="/projects/talisman/mrunyan/other_models/SpliceTransformer"
 
 # derived from repo
 fasta="$repo_root/pipeline/reference/GRCh38/GRCh38.primary_assembly.genome.fa"
@@ -23,7 +30,7 @@ logs="$data_dir/logs"
 mkdir -p "$logs"
 
 # conda environments per model
-declare -A envs=([sa]=sa_env [pang]=pang_env [splaire]=splaire_env [spt]=spt-test)
+declare -A envs=([sa]=sa_env [pang]=pang_env [pang_v2]=pang_env [splaire]=splaire_env [spt]=spt-test)
 
 score_dataset() {
     local dataset="$1"
@@ -33,41 +40,63 @@ score_dataset() {
     local score_dir="$data_dir/$dataset/scores"
     mkdir -p "$score_dir"
 
-    for model in sa pang splaire spt; do
+    for model in sa pang pang_v2 splaire spt; do
         local env="${envs[$model]}"
         local cmds=""
         local need_run=false
 
-        for vcf_base in "${vcf_bases[@]}"; do
-            local vcf="$data_dir/$dataset/${vcf_base}.vcf.gz"
-            [ ! -f "$vcf" ] && continue
-
-            if [ "$model" = "splaire" ]; then
+        if [ "$model" = "splaire" ]; then
+            # splaire: single invocation with --extra for additional vcfs
+            # load models once, score all vcfs without gpu idle gaps
+            local first_vcf="" first_out=""
+            local extras=""
+            for vcf_base in "${vcf_bases[@]}"; do
+                local vcf="$data_dir/$dataset/${vcf_base}.vcf.gz"
+                [ -z "$DEP" ] && [ ! -f "$vcf" ] && continue
                 local out_file="$score_dir/${vcf_base}.splaire"
                 local check_file="${out_file}.ref.h5"
-            else
+                if [ ! -f "$check_file" ]; then
+                    need_run=true
+                    if [ -z "$first_vcf" ]; then
+                        first_vcf="$vcf"
+                        first_out="$out_file"
+                    else
+                        extras="$extras --extra $vcf $out_file"
+                    fi
+                fi
+            done
+            if [ "$need_run" = true ] && [ -n "$first_vcf" ]; then
+                cmds="python score_splaire.py $first_vcf $fasta $first_out --models-dir $models_dir$extras"
+            fi
+        else
+            for vcf_base in "${vcf_bases[@]}"; do
+                local vcf="$data_dir/$dataset/${vcf_base}.vcf.gz"
+                [ -z "$DEP" ] && [ ! -f "$vcf" ] && continue
                 local out_file="$score_dir/${vcf_base}.${model}.h5"
                 local check_file="$out_file"
-            fi
 
-            if [ ! -f "$check_file" ]; then
-                need_run=true
-                [ -n "$cmds" ] && cmds="$cmds && "
+                if [ ! -f "$check_file" ]; then
+                    need_run=true
+                    [ -n "$cmds" ] && cmds="$cmds && "
 
-                # model-specific extra args
-                local extra=""
-                [ "$model" = "splaire" ] && extra="--models-dir $models_dir"
-                [ "$model" = "spt" ] && extra="--spt-dir $spt_dir"
+                    local extra=""
+                    local script="score_${model}.py"
+                    [ "$model" = "spt" ] && extra="--spt-dir $spt_dir"
+                    if [ "$model" = "pang_v2" ]; then
+                        script="score_pang.py"
+                        extra="--v2"
+                    fi
 
-                cmds="${cmds}python score_${model}.py $vcf $fasta $out_file $extra"
-            fi
-        done
+                    cmds="${cmds}python $script $vcf $fasta $out_file $extra"
+                fi
+            done
+        fi
 
         if [ "$need_run" = true ]; then
-            sbatch --job-name="${model}_${dataset}" \
+            sbatch $DEP --job-name="${model}_${dataset}" \
                 --output="$logs/${model}_${dataset}_%j.out" \
                 --error="$logs/${model}_${dataset}_%j.err" \
-                --partition=gpu --gres=gpu:v100-sxm2:1 --mem=64G --time=8:00:00 --cpus-per-task=4 \
+                --partition=${GPU_PARTITION:-gpu} --gres=gpu:v100-sxm2:1 --mem=64G --time=${GPU_TIME:-8:00:00} --cpus-per-task=4 \
                 --wrap="source ~/.bashrc && conda activate $env && cd $src && $cmds"
             echo "  submitted ${model} for ${dataset}"
         else
@@ -96,20 +125,35 @@ score_ambig() {
     score_dataset leafcutter_ambig ambig
 }
 
-# credible set companion scoring
-score_cs_txrevise() {
-    echo "cs_txrevise"
-    score_dataset cs_txrevise variants
+
+score_txrevise_pip50() {
+    echo "txrevise_pip50"
+    score_dataset txrevise_pip50 pos neg
 }
 
-score_cs_leafcutter() {
-    echo "cs_leafcutter"
-    score_dataset cs_leafcutter variants
+score_leafcutter_pip50() {
+    echo "leafcutter_pip50"
+    score_dataset leafcutter_pip50 pos neg
 }
 
-score_cs_haec() {
-    echo "cs_haec"
-    score_dataset cs_haec variants
+score_haec_pip50() {
+    echo "haec_pip50"
+    score_dataset haec_pip50 pos neg
+}
+
+score_txrevise_hungarian() {
+    echo "txrevise_hungarian"
+    score_dataset txrevise_hungarian pos neg
+}
+
+score_leafcutter_hungarian() {
+    echo "leafcutter_hungarian"
+    score_dataset leafcutter_hungarian pos neg
+}
+
+score_haec_hungarian() {
+    echo "haec_hungarian (gpu-short)"
+    GPU_PARTITION=gpu-short GPU_TIME=2:00:00 score_dataset haec_hungarian pos neg
 }
 
 
@@ -118,15 +162,25 @@ case "$mode" in
     leafcutter)    score_leafcutter ;;
     haec)          score_haec ;;
     ambig)         score_ambig ;;
-    cs_txrevise)   score_cs_txrevise ;;
-    cs_leafcutter) score_cs_leafcutter ;;
-    cs_haec)       score_cs_haec ;;
-    cs_all)
-        score_cs_txrevise
+    txrevise_pip50)   score_txrevise_pip50 ;;
+    leafcutter_pip50) score_leafcutter_pip50 ;;
+    haec_pip50)       score_haec_pip50 ;;
+    txrevise_hungarian)   score_txrevise_hungarian ;;
+    leafcutter_hungarian) score_leafcutter_hungarian ;;
+    haec_hungarian)       score_haec_hungarian ;;
+    hungarian)
+        score_txrevise_hungarian
         echo ""
-        score_cs_leafcutter
+        score_leafcutter_hungarian
         echo ""
-        score_cs_haec
+        score_haec_hungarian
+        ;;
+    pip50)
+        score_txrevise_pip50
+        echo ""
+        score_leafcutter_pip50
+        echo ""
+        score_haec_pip50
         ;;
     all)
         score_txrevise
@@ -138,7 +192,7 @@ case "$mode" in
         score_ambig
         ;;
     *)
-        echo "usage: bash score.sh [txrevise|leafcutter|haec|ambig|cs_txrevise|cs_leafcutter|cs_haec|cs_all|all]"
+        echo "usage: bash score.sh [txrevise|leafcutter|haec|ambig|txrevise_pip50|leafcutter_pip50|haec_pip50|pip50|txrevise_hungarian|leafcutter_hungarian|haec_hungarian|hungarian|all]"
         exit 1
         ;;
 esac

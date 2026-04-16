@@ -11,6 +11,9 @@ splice_dist for negatives = distance to nearest leafcutter intron boundary
 in same gene (intron boundaries from zenodo phenotype metadata — all
 leafcutter-detected introns, not just QTL-tested)
 
+optional --max-dist-diff controls how closely the negative's splice distance
+must match the positive's. 0 = exact match (borzoi-style), None = no limit.
+
 usage:
     python src/make_leafcutter.py \
         --cs-dir $data_dir/leafcutter/raw \
@@ -18,7 +21,8 @@ usage:
         --ge-dir $data_dir/ge/sumstats \
         --gtf $data_dir/reference/gencode.v39.basic.annotation.gtf.gz \
         --tpm $data_dir/reference/GTEx_v8_median_tpm.gct.gz \
-        --out-dir $data_dir/leafcutter
+        --out-dir $data_dir/leafcutter \
+        [--max-dist-diff 0]
 """
 import argparse
 import gzip
@@ -32,7 +36,6 @@ import polars as pl
 from tqdm import tqdm
 
 # thresholds
-pos_pip = 0.9
 neg_pip = 0.01
 max_dist = 10_000
 tpm_bin_size = 0.4
@@ -94,6 +97,7 @@ tissue_map = {
 _gene_strands = None
 _tissue_bins = None
 _neg_dir = None
+_max_dist_diff = None
 
 
 def write_vcf(df, path):
@@ -352,12 +356,92 @@ def build_tpm_bins(tpm_file):
     return tissue_bins
 
 
-def _init_worker(gene_strands, tissue_bins, neg_dir):
+def _init_worker(gene_strands, tissue_bins, neg_dir, max_dist_diff, match_scheme="tiered"):
     """initialize worker process with shared data"""
-    global _gene_strands, _tissue_bins, _neg_dir
+    global _gene_strands, _tissue_bins, _neg_dir, _max_dist_diff, _match_scheme
     _gene_strands = gene_strands
     _tissue_bins = tissue_bins
     _neg_dir = neg_dir
+    _max_dist_diff = max_dist_diff
+    _match_scheme = match_scheme
+
+
+def _match_tissue_hungarian(args):
+    """hungarian match within expression bin: drops gene stratum, solves
+    global one-to-one assignment minimizing sum of |log10(p+1)-log10(n+1)|
+    """
+    from scipy.optimize import linear_sum_assignment
+    tissue, t_pos_data = args
+    t_pos = pd.DataFrame(t_pos_data)
+
+    t_neg = load_tissue_negatives(_neg_dir, tissue, _gene_strands)
+    if len(t_neg) == 0:
+        return None
+    t_neg = t_neg[~t_neg["var_key"].isin(set(t_pos["var_key"]))]
+    if len(t_neg) == 0:
+        return None
+
+    gene_to_bin = _tissue_bins.get(tissue, {}).get("gene_to_bin", {})
+
+    t_pos = t_pos.copy()
+    t_neg = t_neg.copy()
+    t_pos["bin"] = t_pos["gene_id"].map(gene_to_bin).fillna(-1).astype(int)
+    t_neg["bin"] = t_neg["gene_id"].map(gene_to_bin).fillna(-1).astype(int)
+    # dedupe: one row per var_key (min splice_dist)
+    t_neg = (t_neg.sort_values("splice_dist")
+                   .drop_duplicates("var_key", keep="first")
+                   .reset_index(drop=True))
+    t_pos = (t_pos.sort_values("splice_dist")
+                   .drop_duplicates("var_key", keep="first")
+                   .reset_index(drop=True))
+
+    used = set()  # var_keys used
+    pairs = []
+    for b, pos_in_bin in t_pos.groupby("bin"):
+        neg_in_bin = t_neg[t_neg["bin"] == b]
+        if len(neg_in_bin) == 0 or len(pos_in_bin) == 0:
+            continue
+        log_p = np.log10(pos_in_bin["splice_dist"].astype(float).values + 1.0)
+        log_n = np.log10(neg_in_bin["splice_dist"].astype(float).values + 1.0)
+        cost = np.abs(log_p[:, None] - log_n[None, :])
+        if _max_dist_diff is not None:
+            p_sd = pos_in_bin["splice_dist"].astype(float).values
+            n_sd = neg_in_bin["splice_dist"].astype(float).values
+            cost = np.where(np.abs(p_sd[:, None] - n_sd[None, :]) > _max_dist_diff, 1e9, cost)
+        row_ind, col_ind = linear_sum_assignment(cost)
+
+        pos_vals = pos_in_bin.reset_index(drop=True)
+        neg_vals = neg_in_bin.reset_index(drop=True)
+        for ri, ci in zip(row_ind, col_ind):
+            if cost[ri, ci] >= 1e8:
+                continue
+            n = neg_vals.iloc[ci]
+            if n["var_key"] in used:
+                continue
+            used.add(n["var_key"])
+            p = pos_vals.iloc[ri]
+            pairs.append({
+                "tissue": tissue,
+                "pos_var_key": p["var_key"],
+                "neg_var_key": n["var_key"],
+                "neg_var_key_ideal": n["var_key"],
+                "tier": 99,
+                "pos_pip": p["pip"],
+            })
+
+    matched_neg = t_neg[t_neg["var_key"].isin(used)]
+    return {
+        "pairs": pairs,
+        "stats": {
+            "tissue": tissue,
+            "n_pos": len(t_pos),
+            "n_matched": len(used),
+            **{f"tier_{t}": 0 for t in [1, 2, 3, 4]},
+            "tier_99_hungarian": len(used),
+        },
+        "tiers": {1: 0, 2: 0, 3: 0, 4: 0, 99: len(used)},
+        "neg_matched": matched_neg.to_dict("records"),
+    }
 
 
 def _match_tissue(args):
@@ -398,11 +482,25 @@ def _match_tissue(args):
         gene, ref, alt, p_sd = p["gene_id"], p["ref"], p["alt"], p["splice_dist"]
         best_i, tier = None, None
 
+        # ideal match (ignoring used set)
+        ideal_i = None
+        for idx_map in [idx_gene_allele.get((gene, ref, alt), []),
+                        idx_gene.get(gene, []),
+                        idx_bin_allele.get((gene_to_bin.get(gene, None), ref, alt), []) if gene in gene_to_bin else [],
+                        idx_bin.get(gene_to_bin.get(gene, None), []) if gene in gene_to_bin else []]:
+            if idx_map:
+                c = min(idx_map, key=lambda i: abs(neg_arr[i][3] - p_sd))
+                if _max_dist_diff is None or abs(neg_arr[c][3] - p_sd) <= _max_dist_diff:
+                    ideal_i = c
+                    break
+
         # tier 1: gene + allele
         cands = [i for i in idx_gene_allele.get((gene, ref, alt), []) if i not in used]
         if cands:
             best_i = min(cands, key=lambda i: abs(neg_arr[i][3] - p_sd))
             tier = 1
+            if _max_dist_diff is not None and abs(neg_arr[best_i][3] - p_sd) > _max_dist_diff:
+                best_i, tier = None, None
 
         # tier 2: gene only
         if best_i is None:
@@ -410,6 +508,8 @@ def _match_tissue(args):
             if cands:
                 best_i = min(cands, key=lambda i: abs(neg_arr[i][3] - p_sd))
                 tier = 2
+                if _max_dist_diff is not None and abs(neg_arr[best_i][3] - p_sd) > _max_dist_diff:
+                    best_i, tier = None, None
 
         # tier 3: bin + allele
         if best_i is None and gene in gene_to_bin:
@@ -418,6 +518,8 @@ def _match_tissue(args):
             if cands:
                 best_i = min(cands, key=lambda i: abs(neg_arr[i][3] - p_sd))
                 tier = 3
+                if _max_dist_diff is not None and abs(neg_arr[best_i][3] - p_sd) > _max_dist_diff:
+                    best_i, tier = None, None
 
         # tier 4: bin only
         if best_i is None and gene in gene_to_bin:
@@ -426,6 +528,8 @@ def _match_tissue(args):
             if cands:
                 best_i = min(cands, key=lambda i: abs(neg_arr[i][3] - p_sd))
                 tier = 4
+                if _max_dist_diff is not None and abs(neg_arr[best_i][3] - p_sd) > _max_dist_diff:
+                    best_i, tier = None, None
 
         if best_i is not None:
             used.add(best_i)
@@ -434,7 +538,9 @@ def _match_tissue(args):
                 "tissue": tissue,
                 "pos_var_key": p["var_key"],
                 "neg_var_key": neg_arr[best_i][4],
-                "tier": tier
+                "neg_var_key_ideal": neg_arr[ideal_i][4] if ideal_i is not None else neg_arr[best_i][4],
+                "tier": tier,
+                "pos_pip": p["pip"],
             })
 
     # collect matched negative rows
@@ -454,14 +560,14 @@ def _match_tissue(args):
     }
 
 
-def run_matching(pos, neg_dir, tissue_bins, gene_strands, n_workers=8):
+def run_matching(pos, neg_dir, tissue_bins, gene_strands, n_workers=8, max_dist_diff=None, pos_pip=0.9):
     """4-tier ge matching, loading negatives tissue-by-tissue in parallel"""
     pos_high = pos[pos["pip"] >= pos_pip].copy()
     # dedup to one row per var_key (highest pip)
     pos_high = pos_high.sort_values("pip", ascending=False).drop_duplicates("var_key", keep="first")
-    # track tissues per positive
+    # track tissues per positive (only tissues where pip >= threshold)
     pos_keys = set(pos_high["var_key"])
-    pos_tissues = pos[pos["var_key"].isin(pos_keys)].groupby("var_key")["tissue"].apply(set).to_dict()
+    pos_tissues = pos[(pos["var_key"].isin(pos_keys)) & (pos["pip"] >= pos_pip)].groupby("var_key")["tissue"].apply(set).to_dict()
 
     all_tissues = set()
     for ts in pos_tissues.values():
@@ -473,15 +579,19 @@ def run_matching(pos, neg_dir, tissue_bins, gene_strands, n_workers=8):
         t_pos = pos_high[pos_high["var_key"].isin(t_pos_keys)]
         args_list.append((tissue, t_pos.to_dict("records")))
 
-    print(f"matching {len(args_list)} tissues with {n_workers} workers...")
+    if max_dist_diff is not None:
+        print(f"max splice distance difference: {max_dist_diff}")
+    scheme = getattr(run_matching, "_match_scheme", "tiered")
+    print(f"matching {len(args_list)} tissues with {n_workers} workers (scheme: {scheme})...")
+    worker_fn = _match_tissue_hungarian if scheme == "hungarian" else _match_tissue
     with Pool(n_workers, initializer=_init_worker,
-              initargs=(gene_strands, tissue_bins, neg_dir)) as pool:
-        results = list(tqdm(pool.imap(_match_tissue, args_list),
+              initargs=(gene_strands, tissue_bins, neg_dir, max_dist_diff, scheme)) as pool:
+        results = list(tqdm(pool.imap(worker_fn, args_list),
                             total=len(args_list), desc="matching"))
 
     # aggregate
     all_pairs = []
-    tier_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+    tier_counts = {1: 0, 2: 0, 3: 0, 4: 0, 99: 0}
     tissue_stats = []
     matched_neg_rows = []
 
@@ -489,8 +599,8 @@ def run_matching(pos, neg_dir, tissue_bins, gene_strands, n_workers=8):
         if res is None:
             continue
         all_pairs.extend(res["pairs"])
-        for t in [1, 2, 3, 4]:
-            tier_counts[t] += res["tiers"][t]
+        for t in [1, 2, 3, 4, 99]:
+            tier_counts[t] += res["tiers"].get(t, 0)
         tissue_stats.append(res["stats"])
         if res["neg_matched"]:
             matched_neg_rows.append(pd.DataFrame(res["neg_matched"]))
@@ -498,8 +608,11 @@ def run_matching(pos, neg_dir, tissue_bins, gene_strands, n_workers=8):
     pairs_df = pd.DataFrame(all_pairs)
     stats_df = pd.DataFrame(tissue_stats)
     neg_matched = pd.concat(matched_neg_rows, ignore_index=True) if matched_neg_rows else pd.DataFrame()
-    print(f"matched {len(pairs_df):,} pairs: " +
-          ", ".join(f"t{t}={tier_counts[t]}" for t in [1, 2, 3, 4]))
+    if scheme == "hungarian":
+        print(f"matched {len(pairs_df):,} pairs via hungarian (n={tier_counts[99]:,})")
+    else:
+        print(f"matched {len(pairs_df):,} pairs: " +
+              ", ".join(f"t{t}={tier_counts[t]}" for t in [1, 2, 3, 4]))
     return pairs_df, stats_df, tier_counts, pos_high, neg_matched
 
 
@@ -531,7 +644,17 @@ def main():
     ap.add_argument("--gtf", required=True)
     ap.add_argument("--tpm", required=True)
     ap.add_argument("--out-dir", required=True, help="output directory")
+    ap.add_argument("--max-dist-diff", type=int, default=None,
+                    help="max allowed splice distance difference between pos and neg (0 = exact match)")
+    ap.add_argument("--pos-pip", type=float, default=0.9,
+                    help="minimum PIP for positive variants (default: 0.9)")
+    ap.add_argument("--match-scheme", choices=["tiered", "hungarian"], default="tiered",
+                    help="matching algorithm: tiered (4-tier cascade, default) or "
+                         "hungarian (bin-stratified, global one-to-one on log-distance)")
     args = ap.parse_args()
+    run_matching._match_scheme = args.match_scheme
+
+    print(f"pos pip threshold: {args.pos_pip}")
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -560,7 +683,8 @@ def main():
     # run matching
     print("\nge matching")
     pairs, tissue_stats, tier_counts, pos_high, neg_matched = run_matching(
-        pos, neg_dir, tissue_bins, gene_strands
+        pos, neg_dir, tissue_bins, gene_strands,
+        max_dist_diff=args.max_dist_diff, pos_pip=args.pos_pip
     )
 
     # save pairs
@@ -604,7 +728,7 @@ def main():
         n_rows=("var_key", "count"),
         n_variants=("var_key", "nunique"),
         n_genes=("gene_id", "nunique"),
-        n_high_pip=("pip", lambda x: (x >= pos_pip).sum())
+        n_high_pip=("pip", lambda x: (x >= args.pos_pip).sum())
     ).reset_index()
     cs_stats.to_csv(out / "credset_stats.csv", index=False)
     print(f"saved credset_stats: {len(cs_stats)} tissues")

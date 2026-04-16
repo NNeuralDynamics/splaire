@@ -68,9 +68,28 @@ def main():
     prev_dir = os.getcwd()
     os.chdir(spt_path)
     try:
+        # patch load_state_dict to remap ParameterList keys if needed
+        # (pytorch version mismatch: weights.0 vs weights_0)
+        import re as _re
+        _orig_load_state_dict = torch.nn.Module.load_state_dict
+        def _patched_load_state_dict(self, state_dict, strict=True):
+            try:
+                return _orig_load_state_dict(self, state_dict, strict=strict)
+            except RuntimeError as e:
+                if "weights_0" in str(e) or "weights.0" in str(e):
+                    print("patching state_dict keys (ParameterList dot/underscore)...", flush=True)
+                    fixed = {_re.sub(r'\.weights\.(\d+)', r'.weights_\1', k): v
+                             for k, v in state_dict.items()}
+                    return _orig_load_state_dict(self, fixed, strict=strict)
+                raise
+        torch.nn.Module.load_state_dict = _patched_load_state_dict
+
         from sptransformer import Annotator
         annotator = Annotator()
         model = annotator.model
+
+        torch.nn.Module.load_state_dict = _orig_load_state_dict
+
         if hasattr(model, "eval"):
             model.eval()
     finally:
@@ -108,8 +127,8 @@ def main():
     # write output
     print(f"writing {args.output_h5}", flush=True)
     with h5py.File(args.output_h5, "w") as f:
-        f.create_dataset("ref", data=ref_out, compression="gzip")
-        f.create_dataset("alt", data=alt_out, compression="gzip")
+        f.create_dataset("ref", data=ref_out, compression=None)
+        f.create_dataset("alt", data=alt_out, compression=None)
 
         str_dt = h5py.special_dtype(vlen=str)
         f.create_dataset("var_key", data=vcf_df["var_key"].values.astype(object), dtype=str_dt)
