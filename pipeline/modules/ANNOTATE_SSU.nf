@@ -3,7 +3,7 @@ nextflow.enable.dsl=2
 process ANNOTATE_SSU {
     tag "$meta.id"
     label 'process_low'
-    publishDir "${params.output_dir}/${meta.id}/spliser", mode: 'move'
+    publishDir "${params.output_dir}/${meta.id}/spliser", mode: 'link'
 
     input:
     tuple val(meta), path(spliser_tsv), path(master_sites)

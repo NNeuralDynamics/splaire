@@ -7,7 +7,7 @@ process ALIGN_PASS2 {
     tag "$meta.id"
     label 'process_star'
     // publish filtered BAM, spliser, featurecounts, and star_2nd_pass (with metrics)
-    publishDir "${params.output_dir}/${meta.id}", mode: 'move', pattern: "{filtered_bam,spliser,featurecounts,star_2nd_pass}/*"
+    publishDir "${params.output_dir}/${meta.id}", mode: 'link', pattern: "{filtered_bam,spliser,featurecounts,star_2nd_pass}/*"
 
     input:
     tuple val(meta), path(r1), path(r2), path(vcf), path(genome_dir), path(sj_files, stageAs: '*.SJ.out.tab')
