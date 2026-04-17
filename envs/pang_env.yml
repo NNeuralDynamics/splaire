@@ -8,6 +8,7 @@ dependencies:
   - python=3.10
   - pytorch=2.2
   - pytorch-cuda=12.1
+  - setuptools
   - pip
   - pip:
       - h5py
