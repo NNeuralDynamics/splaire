@@ -22,14 +22,6 @@ script_dir="$repo_root/analysis/test"
 
 source ~/.bashrc
 
-# set up XLA cuda path from triton's bundled cuda (ptxas + libdevice)
-_triton_cuda="$(python -c 'import triton; print(triton.__path__[0])' 2>/dev/null)/third_party/cuda"
-if [ -d "$_triton_cuda" ] && [ ! -d "$_triton_cuda/nvvm/libdevice" ]; then
-    mkdir -p "$_triton_cuda/nvvm/libdevice"
-    ln -sf "$_triton_cuda/lib/libdevice.10.bc" "$_triton_cuda/nvvm/libdevice/"
-fi
-[ -d "$_triton_cuda" ] && export XLA_FLAGS="--xla_gpu_cuda_data_dir=$_triton_cuda"
-
 mkdir -p "$output_dir/predictions" score_logs
 completed="$output_dir/completed.txt"
 touch "$completed"
