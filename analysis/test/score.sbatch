@@ -21,6 +21,7 @@ output_dir="${2:?usage: sbatch score.sbatch input_dir output_dir}"
 script_dir="$repo_root/analysis/test"
 
 source ~/.bashrc
+module load cuda/12.3.0
 
 mkdir -p "$output_dir/predictions" score_logs
 completed="$output_dir/completed.txt"
