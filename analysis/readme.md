@@ -39,29 +39,40 @@ tar xf splice_tables.tar && gunzip splice_tables/*.gz
 rm splice_tables.tar
 
 # build per-donor h5 datasets (see pipeline/readme.md)
-# gtex tissues
-for tissue in lung brain_cortex testis whole_blood; do
-    mkdir -p $OUT/${tissue}_run && cd $OUT/${tissue}_run
-    nextflow run $REPO/pipeline/main.nf \
-        -entry build_h5_only \
-        --input_matrix $OUT/splice_tables/${tissue}_splice_table.tsv \
-        --samplesheet $REPO/pipeline/configs/gtex/${tissue}_samples.tsv \
-        --splits_config $REPO/pipeline/configs/gtex/${tissue}_splits.yaml \
-        --output_dir $OUT/${tissue} \
-        --dataset_out_dir $OUT/${tissue}/ml_data \
-        -profile slurm
-done
+mkdir -p $OUT/lung_run && cd $OUT/lung_run
+nextflow run $REPO/pipeline/main.nf -entry build_h5_only \
+    --input_matrix $OUT/splice_tables/lung_splice_table.tsv \
+    --samplesheet $REPO/pipeline/configs/gtex/lung_samples.tsv \
+    --splits_config $REPO/pipeline/configs/gtex/lung_splits.yaml \
+    --output_dir $OUT/lung --dataset_out_dir $OUT/lung/ml_data -profile slurm
 
-# haec10 (different config paths)
+mkdir -p $OUT/brain_cortex_run && cd $OUT/brain_cortex_run
+nextflow run $REPO/pipeline/main.nf -entry build_h5_only \
+    --input_matrix $OUT/splice_tables/brain_cortex_splice_table.tsv \
+    --samplesheet $REPO/pipeline/configs/gtex/brain_cortex_samples.tsv \
+    --splits_config $REPO/pipeline/configs/gtex/brain_cortex_splits.yaml \
+    --output_dir $OUT/brain_cortex --dataset_out_dir $OUT/brain_cortex/ml_data -profile slurm
+
+mkdir -p $OUT/testis_run && cd $OUT/testis_run
+nextflow run $REPO/pipeline/main.nf -entry build_h5_only \
+    --input_matrix $OUT/splice_tables/testis_splice_table.tsv \
+    --samplesheet $REPO/pipeline/configs/gtex/testis_samples.tsv \
+    --splits_config $REPO/pipeline/configs/gtex/testis_splits.yaml \
+    --output_dir $OUT/testis --dataset_out_dir $OUT/testis/ml_data -profile slurm
+
+mkdir -p $OUT/whole_blood_run && cd $OUT/whole_blood_run
+nextflow run $REPO/pipeline/main.nf -entry build_h5_only \
+    --input_matrix $OUT/splice_tables/whole_blood_splice_table.tsv \
+    --samplesheet $REPO/pipeline/configs/gtex/whole_blood_samples.tsv \
+    --splits_config $REPO/pipeline/configs/gtex/whole_blood_splits.yaml \
+    --output_dir $OUT/whole_blood --dataset_out_dir $OUT/whole_blood/ml_data -profile slurm
+
 mkdir -p $OUT/haec10_run && cd $OUT/haec10_run
-nextflow run $REPO/pipeline/main.nf \
-    -entry build_h5_only \
+nextflow run $REPO/pipeline/main.nf -entry build_h5_only \
     --input_matrix $OUT/splice_tables/haec10_splice_table.tsv \
     --samplesheet $REPO/pipeline/configs/haec/haec182_samples.tsv \
     --splits_config $REPO/pipeline/configs/haec/haec10_splits.yaml \
-    --output_dir $OUT/haec10 \
-    --dataset_out_dir $OUT/haec10/ml_data \
-    -profile slurm
+    --output_dir $OUT/haec10 --dataset_out_dir $OUT/haec10/ml_data -profile slurm
 
 # score with all models (gpu, ~24 hrs per tissue for 5 models)
 cd $REPO/analysis/test

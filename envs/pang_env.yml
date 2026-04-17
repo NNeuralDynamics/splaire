@@ -8,9 +8,9 @@ dependencies:
   - python=3.10
   - pytorch=2.2
   - pytorch-cuda=12.1
-  - setuptools
   - pip
   - pip:
+      - setuptools==75.0.0
       - h5py
       - numpy<2
       - pandas

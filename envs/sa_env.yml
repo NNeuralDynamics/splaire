@@ -4,9 +4,9 @@ channels:
   - defaults
 dependencies:
   - python=3.10
-  - setuptools
   - pip
   - pip:
+      - setuptools==75.0.0
       - spliceai
       - tensorflow==2.17.0
       - nvidia-cuda-nvcc-cu12==12.1.105
