@@ -20,5 +20,6 @@ dependencies:
   - pyarrow
   - pip
   - pip:
+      - torch==1.10.1
       - sinkhorn-transformer
       - einops
