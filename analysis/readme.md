@@ -5,16 +5,26 @@ figures for the SPLAIRE paper. each figure has its own subfolder with a readme c
 ## setup
 
 ```bash
-conda env create -f ../envs/splaire_env.yml
-conda activate splaire_env
-```
-
-set paths once, everything below uses these.
- `OUT` needs at least 400GB for full analysis.
-
-```bash
 REPO=/full/path/to/cloned_repo
 OUT=/full/path/to/output_dir
+
+conda env create -f $REPO/envs/splaire_env.yml
+conda env create -f $REPO/envs/sa_env.yml
+conda env create -f $REPO/envs/pang_env.yml
+conda env create -f $REPO/envs/spt_env.yml
+
+conda activate splaire_env
+export SPLAIRE_CONDA_ENV=$CONDA_PREFIX
+cd $REPO/analysis
+```
+
+`OUT` needs at least 400GB for full analysis.
+
+genome fasta (too big for github):
+
+```bash
+python $REPO/pipeline/reference/GRCh38/getReference.py --version 45 --download both --output_dir $REPO/pipeline/reference/GRCh38
+gunzip $REPO/pipeline/reference/GRCh38/GRCh38.primary_assembly.genome.fa.gz
 ```
 
 ## figures 1 & 2 — splice sites & model comparison
@@ -23,12 +33,14 @@ build h5 datasets from splice tables, score with all models, compute metrics, ma
 
 ```bash
 # download splice tables from zenodo
-mkdir -p $OUT/splice_tables && cd $OUT/splice_tables
+cd $OUT
 wget https://zenodo.org/records/19136478/files/splice_tables.tar
 tar xf splice_tables.tar && gunzip splice_tables/*.gz
+rm splice_tables.tar
 
-# build per-donor h5 datasets (one nextflow run per tissue, see pipeline/readme.md)
-for tissue in haec10 lung brain_cortex testis whole_blood; do
+# build per-donor h5 datasets (see pipeline/readme.md)
+# gtex tissues
+for tissue in lung brain_cortex testis whole_blood; do
     mkdir -p $OUT/${tissue}_run && cd $OUT/${tissue}_run
     nextflow run $REPO/pipeline/main.nf \
         -entry build_h5_only \
@@ -39,6 +51,17 @@ for tissue in haec10 lung brain_cortex testis whole_blood; do
         --dataset_out_dir $OUT/${tissue}/ml_data \
         -profile slurm
 done
+
+# haec10 (different config paths)
+mkdir -p $OUT/haec10_run && cd $OUT/haec10_run
+nextflow run $REPO/pipeline/main.nf \
+    -entry build_h5_only \
+    --input_matrix $OUT/splice_tables/haec10_splice_table.tsv \
+    --samplesheet $REPO/pipeline/configs/haec/haec182_samples.tsv \
+    --splits_config $REPO/pipeline/configs/haec/haec10_splits.yaml \
+    --output_dir $OUT/haec10 \
+    --dataset_out_dir $OUT/haec10/ml_data \
+    -profile slurm
 
 # score with all models (gpu, ~24 hrs per tissue for 5 models)
 cd $REPO/analysis/test
