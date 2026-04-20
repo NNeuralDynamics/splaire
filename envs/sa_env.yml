@@ -10,7 +10,7 @@ dependencies:
       - spliceai
       - tensorflow==2.17.0
       - nvidia-cuda-nvcc-cu12==12.1.105
-      - h5py
+      - h5py==3.10.0
       - numpy<2
       - pandas
       - pyarrow
