@@ -22,6 +22,51 @@ from utils import load_vcf, onehot, extract_sequences
 batch_size = 128
 
 
+def realign_indel_preds(preds, ref_lens, alt_lens):
+    """realign alt predictions to ref coordinates for indels
+
+    same approach as spliceai/pangolin: for insertions, collapse extra positions
+    at center with max; for deletions, pad with zeros at center
+    """
+    n, L = preds.shape[0], preds.shape[1]
+    center = L // 2
+    out = preds.copy()
+    for i in range(n):
+        diff = alt_lens[i] - ref_lens[i]
+        if diff == 0:
+            continue
+        if diff > 0:
+            # insertion: alt has extra positions, collapse with max
+            if preds.ndim == 3:
+                out[i] = np.concatenate([
+                    preds[i, :center],
+                    np.max(preds[i, center:center+diff+1], axis=0, keepdims=True),
+                    preds[i, center+diff+1:]
+                ], axis=0)[:L]
+            else:
+                out[i] = np.concatenate([
+                    preds[i, :center],
+                    [np.max(preds[i, center:center+diff+1])],
+                    preds[i, center+diff+1:]
+                ])[:L]
+        else:
+            # deletion: alt is missing positions, pad with zeros
+            pad = abs(diff)
+            if preds.ndim == 3:
+                out[i] = np.concatenate([
+                    preds[i, :center+1],
+                    np.zeros((pad, preds.shape[2]), dtype=preds.dtype),
+                    preds[i, center+1:]
+                ], axis=0)[:L]
+            else:
+                out[i] = np.concatenate([
+                    preds[i, :center+1],
+                    np.zeros(pad, dtype=preds.dtype),
+                    preds[i, center+1:]
+                ])[:L]
+    return out
+
+
 def _predict_ensemble(models, oh, bs):
     """run predict on each model in list and return mean"""
     return np.mean([m.predict(oh, batch_size=bs, verbose=0) for m in models], axis=0).astype(np.float32)
@@ -114,6 +159,20 @@ def score_vcf(vcf_path, fasta, output_prefix, models, mode="both", minus_flip=Tr
             del vcr, vca, vrr, vra, vrr_preds, vra_preds
 
         del ref_oh, alt_oh
+
+    # realign alt predictions for indels (match spliceai/pangolin approach)
+    ref_lens = vcf_df["ref"].str.len().values
+    alt_lens = vcf_df["alt"].str.len().values
+    has_indels = (ref_lens != alt_lens).any()
+    if has_indels:
+        n_indels = (ref_lens != alt_lens).sum()
+        print(f"realigning {n_indels:,} indel predictions", flush=True)
+        if mode in ("ref", "both"):
+            cls_alt = realign_indel_preds(cls_alt, ref_lens, alt_lens)
+            reg_alt = realign_indel_preds(reg_alt, ref_lens, alt_lens)
+        if mode in ("var", "both"):
+            vcls_alt = realign_indel_preds(vcls_alt, ref_lens, alt_lens)
+            vreg_alt = realign_indel_preds(vreg_alt, ref_lens, alt_lens)
 
     # write h5 files
     if mode in ("ref", "both"):
