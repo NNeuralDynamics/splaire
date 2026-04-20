@@ -12,7 +12,8 @@ import h5py
 import pysam
 import tensorflow as tf
 from tensorflow.keras.models import load_model
-from pkg_resources import resource_filename
+from importlib.resources import files as _pkg_files
+def resource_filename(pkg, path): return str(_pkg_files(pkg).joinpath(path))
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent))

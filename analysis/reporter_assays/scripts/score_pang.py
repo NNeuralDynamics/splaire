@@ -6,7 +6,8 @@ import os
 import h5py
 import numpy as np
 import torch
-from pkg_resources import resource_filename
+from importlib.resources import files as _pkg_files
+def resource_filename(pkg, path): return str(_pkg_files(pkg).joinpath(path))
 from pangolin.model import Pangolin, L, W, AR
 from tqdm import tqdm
 

@@ -1,5 +1,7 @@
 # SPLAIRE
 
+**SPL**icing in **AIR**way **E**pithelium
+
 splice site usage prediction from pre-mRNA sequence. dilated CNN with classification (acceptor/donor/neither) and regression (SSU) heads, trained on HAEC RNA-seq.
 
 ## setup

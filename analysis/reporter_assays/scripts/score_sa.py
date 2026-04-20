@@ -6,7 +6,8 @@ import os
 
 import h5py
 import numpy as np
-from pkg_resources import resource_filename
+from importlib.resources import files as _pkg_files
+def resource_filename(pkg, path): return str(_pkg_files(pkg).joinpath(path))
 from tensorflow.keras.models import load_model
 from tqdm import tqdm
 

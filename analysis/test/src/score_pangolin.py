@@ -7,7 +7,8 @@ import argparse
 import numpy as np
 import pandas as pd
 import torch
-from pkg_resources import resource_filename
+from importlib.resources import files as _pkg_files
+def resource_filename(pkg, path): return str(_pkg_files(pkg).joinpath(path))
 from tqdm import tqdm
 
 from pangolin.model import Pangolin, L, W, AR
