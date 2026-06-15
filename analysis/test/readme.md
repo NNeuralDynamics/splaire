@@ -6,17 +6,11 @@ score test-set donors with all models and compute metrics
 
 > data: splice tables (and the future `ssu_data.tar`) ship via the [SPLAIRE Zenodo record](https://zenodo.org/records/19136478) so you can rebuild canonical h5 inputs without re-running the full pipeline.
 
-## Environment variables (for non-Explorer clusters)
+## env vars
 
-the sbatches under this directory read env / repo / data paths via `${X_ENV_PREFIX:-default}`,
-so external users only need to export overrides:
+fill in your local paths in `envs/slurm_config`, then `source envs/slurm_config` once per shell (or add it to `~/.bashrc`). every sbatch reads these via `${VAR:?...}` guards that fail fast if any is unset.
 
-- conda env prefixes — `SPLAIRE_ENV_PREFIX`, `SA_ENV_PREFIX`, `PANG_ENV_PREFIX`, `SPT_ENV_PREFIX`, `SEGNT_ENV_PREFIX`, `RINALMO_ENV_PREFIX`, `DELTASPLICE_ENV_PREFIX`, `AG_ENV_PREFIX`
-- `REF_FASTA` — GRCh38 primary assembly fasta ([GENCODE release 45](https://www.gencodegenes.org/human/release_45.html))
-- `ALPHAGENOME_API_KEY`, `AG_DATA_DIR`, `JAX_COMPILATION_CACHE_DIR` — AlphaGenome runtime
-- `HF_HOME` — HuggingFace cache for SegmentNT / NT
-- `SPT_REPO`, `RINALMO_REPO`, `DELTASPLICE_REPO` — local clones of external baselines
-- `SPLAIRE_MODELS_DIR` — SPLAIRE checkpoints (Zenodo `models.tar` or `${REPO}/models/`)
+to stop git from tracking your local edits: `git update-index --skip-worktree envs/slurm_config`
 
 ## setup
 

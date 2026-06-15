@@ -1,0 +1,10 @@
+export AG_ENV_PREFIX=/path/to/conda_envs/alphagenome_env
+export SPLAIRE_ENV_PREFIX=/path/to/conda_envs/splaire_env
+export SA_ENV_PREFIX=/path/to/conda_envs/sa_env
+export PANG_ENV_PREFIX=/path/to/conda_envs/pang_env
+export SPT_ENV_PREFIX=/path/to/conda_envs/spt_env
+export ALPHAGENOME_API_KEY=replace_with_your_deepmind_key
+export AG_DATA_DIR=/path/to/ag_data
+export JAX_COMPILATION_CACHE_DIR=/path/to/jax_cache
+export HF_HOME=/path/to/hf_cache
+export REF_FASTA=/path/to/GRCh38.primary_assembly.genome.fa

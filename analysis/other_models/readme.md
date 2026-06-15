@@ -84,18 +84,9 @@ sbatch analysis/test/download_alphagenome_data.sbatch    # fasta + gtfs + feathe
 sbatch analysis/test/warm_ag_cache.sbatch                # warm the JAX compile cache
 ```
 
-**env vars (export before any AG sbatch):**
+**env vars:** fill in your local paths in `envs/slurm_config`, then `source envs/slurm_config` once per shell (or add to your `~/.bashrc`). every AG sbatch reads these via `${VAR:?...}` guards that fail fast if any is unset.
 
-```bash
-export ALPHAGENOME_API_KEY=<from deepmind>
-export AG_ENV_PREFIX=<path to alphagenome_env>
-export AG_DATA_DIR=<writable dir for aux data>
-export JAX_COMPILATION_CACHE_DIR=<writable dir for jax cache>
-export HF_HOME=<writable dir for huggingface cache>
-export REF_FASTA=<path to GRCh38.primary_assembly.genome.fa>
-```
-
-sbatches use `${VAR:?must export VAR=...}` and fail fast if any of these are missing.
+to stop git from tracking your local edits: `git update-index --skip-worktree envs/slurm_config`
 
 scoring instructions are in `analysis/test/readme.md` (`alphagenome` section) and `analysis/sqtl_bench/` (sQTL-specific sbatches).
 
