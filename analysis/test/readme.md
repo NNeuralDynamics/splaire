@@ -2,6 +2,22 @@
 
 score test-set donors with all models and compute metrics
 
+> note: Pangolin v2 is not scored on the test bench — its training partition overlaps the held-out gencode/mane tables. v2 results appear only on reporter_assays and sqtl_bench.
+
+> data: splice tables (and the future `ssu_data.tar`) ship via the [SPLAIRE Zenodo record](https://zenodo.org/records/19136478) so you can rebuild canonical h5 inputs without re-running the full pipeline.
+
+## Environment variables (for non-Explorer clusters)
+
+the sbatches under this directory read env / repo / data paths via `${X_ENV_PREFIX:-default}`,
+so external users only need to export overrides:
+
+- conda env prefixes — `SPLAIRE_ENV_PREFIX`, `SA_ENV_PREFIX`, `PANG_ENV_PREFIX`, `SPT_ENV_PREFIX`, `SEGNT_ENV_PREFIX`, `RINALMO_ENV_PREFIX`, `DELTASPLICE_ENV_PREFIX`, `AG_ENV_PREFIX`
+- `REF_FASTA` — GRCh38 primary assembly fasta ([GENCODE release 45](https://www.gencodegenes.org/human/release_45.html))
+- `ALPHAGENOME_API_KEY`, `AG_DATA_DIR`, `JAX_COMPILATION_CACHE_DIR` — AlphaGenome runtime
+- `HF_HOME` — HuggingFace cache for SegmentNT / NT
+- `SPT_REPO`, `RINALMO_REPO`, `DELTASPLICE_REPO` — local clones of external baselines
+- `SPLAIRE_MODELS_DIR` — SPLAIRE checkpoints (Zenodo `models.tar` or `${REPO}/models/`)
+
 ## setup
 
 ```bash
@@ -194,6 +210,61 @@ done
 ```
 
 then run `compute_metrics.py` as above. it will only compute metrics for models whose parquet files exist in the predictions directory.
+
+## alphagenome
+
+AG scores all canonical sets + per-donor variants. setup steps (conda env, huggingface access, API key, aux data) are in `../other_models/readme.md` — do those first.
+
+**one-time downloads (idempotent — re-run if anything is missing):**
+
+```bash
+cd ${REPO}/analysis/test
+sbatch download_alphagenome.sbatch         # weights -> HF_HOME
+sbatch download_alphagenome_data.sbatch    # fasta + gtfs + feathers -> AG_DATA_DIR
+sbatch warm_ag_cache.sbatch                # warm the JAX compile cache (~15 min once)
+```
+
+**build AG-sized h5 inputs** (AG uses a different window than the other models, so the canonical sets need their own h5):
+
+```bash
+sbatch build_mane_ag.sbatch       ${OUT}/canonical/mane_select
+sbatch build_gencode_ag.sbatch    ${OUT}/canonical/gencode
+sbatch build_pangolin_ag.sbatch   ${OUT}/canonical/pangolin <tissue>     # one per tissue: heart liver brain testis
+sbatch build_deltasplice_ag.sbatch ${OUT}/canonical/deltasplice
+```
+
+**score canonical sets:**
+
+```bash
+sbatch score_mane_ag.sbatch       ${OUT}/canonical/mane_select
+sbatch score_gencode_ag.sbatch    ${OUT}/canonical/gencode
+sbatch score_pangolin_ag.sbatch   ${OUT}/canonical/pangolin <tissue>
+sbatch score_deltasplice_ag.sbatch ${OUT}/canonical/deltasplice
+```
+
+output lands at `${OUT}/canonical/<set>/predictions/<set>_ag.parquet`.
+
+**score per-donor variants** (HAEC + 4 GTEx tissues — same h5 layout as the per-donor scoring above):
+
+```bash
+for tissue in haec10 lung brain_cortex testis whole_blood; do
+    for h5 in ${OUT}/${tissue}/ml_data_var/individual/*.h5; do
+        name=$(basename "$h5" .h5)
+        out_dir=${OUT}/${tissue}/ml_out_var/predictions/${name}
+        mkdir -p ${out_dir}
+        python src/score_alphagenome_variant.py "$h5" "${out_dir}/${name}_ag.parquet"
+    done
+done
+```
+
+**merge per-fold parquets + compact the SSU column** (AG writes one parquet per CV fold; merge collapses them, compact shrinks the SSU column by null-filling non-splice-site rows):
+
+```bash
+sbatch merge_ag.sbatch    <merged.parquet>
+sbatch compact_ag.sbatch  <input.parquet> <compacted.parquet>
+```
+
+**metrics:** AG plugs into `compute_metrics.py` the same way as the other models — its predictions register via the `_ag` filename suffix.
 
 ## benchmarks
 
