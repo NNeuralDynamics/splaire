@@ -146,6 +146,7 @@ CHANGELOG.md
 !analysis/reporter_assays/mfass/prepare_dataset.py
 !analysis/reporter_assays/vex_seq/prepare_dataset.py
 analysis/reporter_assays/scripts/*.sbatch
+!analysis/reporter_assays/scripts/submit_*_ag.sbatch
 
 # model weights to track (cls + reg, no sigmoid)
 !models/*_cls_best.keras
