@@ -1,0 +1,35 @@
+# after `conda env create -f alphagenome_env.yml` run:
+#   conda activate alphagenome_env
+#   pip install -e <repo>/analysis/other_models/alphagenome_research
+# the local research clone provides `alphagenome_research.model.dna_model`
+# which our scoring scripts import; the pypi `alphagenome` package below
+# only provides the data/output types.
+name: alphagenome_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - setuptools
+      - jax[cuda12]
+      - dm-haiku
+      - optax
+      - orbax
+      - chex
+      - jaxtyping
+      - einshape
+      - etils[epath]
+      - alphagenome
+      - huggingface_hub
+      - kagglehub
+      - tensorflow
+      - anndata
+      - pyBigWig
+      - pyfaidx
+      - pyranges
+      - h5py
+      - numpy
+      - pandas
+      - pyarrow
+      - tqdm
