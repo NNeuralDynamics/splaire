@@ -238,15 +238,25 @@ sbatch score_deltasplice_ag.sbatch ${OUT}/canonical/deltasplice
 
 output lands at `${OUT}/canonical/<set>/predictions/<set>_ag.parquet`.
 
-**score per-donor variants** (HAEC + 4 GTEx tissues — same h5 layout as the per-donor scoring above):
+**build per-donor AG h5s** (one per donor per tissue; applies the donor's in-gene variants to a 1Mb reference window):
 
 ```bash
 for tissue in haec10 lung brain_cortex testis whole_blood; do
-    for h5 in ${OUT}/${tissue}/ml_data_var/individual/*.h5; do
+    sbatch ${REPO}/pipeline/build_perdonor_ag.sbatch $tissue
+done
+```
+
+output lands at `${OUT}/${tissue}/ml_data_var_ag/individual/test_<donor>.h5`. one h5 per donor.
+
+**score per-donor AG** (same scorer as canonical, just looped per donor):
+
+```bash
+for tissue in haec10 lung brain_cortex testis whole_blood; do
+    for h5 in ${OUT}/${tissue}/ml_data_var_ag/individual/*.h5; do
         name=$(basename "$h5" .h5)
-        out_dir=${OUT}/${tissue}/ml_out_var/predictions/${name}
+        out_dir=${OUT}/${tissue}/ml_out_var_ag/predictions/${name}
         mkdir -p ${out_dir}
-        python src/score_alphagenome_variant.py "$h5" "${out_dir}/${name}_ag.parquet"
+        sbatch score_alphagenome.sbatch "$h5" "${out_dir}/${name}_ag.parquet"
     done
 done
 ```

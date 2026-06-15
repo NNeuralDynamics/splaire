@@ -19,6 +19,7 @@ include { FILL_GENCODE }      from './modules/FILL_GENCODE.nf'
 include { GENERATE_SPLITS }           from './modules/GENERATE_SPLITS.nf'
 include { GENERATE_TRAIN_VAL_SPLITS } from './modules/GENERATE_TRAIN_VAL_SPLITS.nf'
 include { BUILD_H5 }                  from './modules/BUILD_H5.nf'
+include { BUILD_H5_AG }               from './modules/BUILD_H5_AG.nf'
 include { SPLIT_H5 }                  from './modules/SPLIT_H5.nf'
 include { COMBINE_H5 }                from './modules/COMBINE_H5.nf'
 
@@ -317,13 +318,14 @@ workflow build_datasets {
     // pair each donor's full h5 with the fold tsvs and split
     split_input = full_h5s
         .map { job, h5 -> tuple(job.donor, h5) }
-        .combine(all_fold_tsvs)
+        .combine(all_fold_tsvs.map { tsvs -> [tsvs] })
     split_h5s = SPLIT_H5(split_input)
 
     // flatten split outputs and group by fold name for combine
     val_by_split = split_h5s
         .flatMap { donor, h5s ->
-            h5s.collect { h5 ->
+            def files = h5s instanceof List ? h5s : [h5s]
+            files.collect { h5 ->
                 // strip _DONOR.h5 suffix to get fold name like "train_split1"
                 def prefix = h5.name.replace("_${donor}.h5", '')
                 tuple(prefix, h5)
@@ -367,16 +369,57 @@ workflow annotate_only {
 
 
 // standalone dataset building from existing processed files
-// usage: nextflow run main.nf -entry build_h5_only --input_matrix /path/to/master_sites_variants.tsv
+// usage: nextflow run main.nf -entry build_h5_only --input_matrix /path/to/sites_filtered.tsv --input_matrix_filled /path/to/sites_filtered_filled.tsv
 
 workflow build_h5_only {
-    assert params.input_matrix : "provide --input_matrix (path to master_sites_variants.tsv)"
+    assert params.input_matrix : "provide --input_matrix (path to unfilled sites tsv)"
     assert params.samplesheet : "provide --samplesheet"
 
     sites_unfilled = Channel.fromPath(params.input_matrix)
-    sites_filled = Channel.fromPath(params.input_matrix)  // same file when no gencode filling
+    sites_filled = Channel.fromPath(params.input_matrix_filled ?: params.input_matrix)
 
     build_datasets(sites_unfilled, sites_filled)
+}
+
+
+// per-donor per-gene h5 build for AlphaGenome scoring.
+// test split only, no COMBINE_H5 (per-gene format isn't combined across donors).
+// usage: nextflow run main.nf -entry build_h5_ag_only \
+//          --input_matrix ... --samplesheet ... --splits_config ... \
+//          --output_dir ... --dataset_out_dir .../ml_data_ag
+
+workflow build_h5_ag_only {
+    assert params.input_matrix : "provide --input_matrix"
+    assert params.samplesheet : "provide --samplesheet"
+
+    split_config = GENERATE_SPLITS(file(params.samplesheet), file(params.splits_config))
+    sites = Channel.fromPath(params.input_matrix)
+
+    ag_jobs = split_config.test_samples
+        .combine(split_config.test_chroms)
+        .combine(split_config.dataset_options)
+        .combine(sites)
+        .flatMap { test_samp, test_chr, opts_file, input_tsv ->
+            def opts = Utils.parseDatasetOpts(opts_file)
+            def encoding = Utils.getEncodingMode(opts.variant)
+            def chrom_str = Utils.chromsToString(test_chr)
+            def jobs = []
+            if (test_samp.size() > 0) {
+                Utils.extractDonors(test_samp).collect { donor ->
+                    jobs << tuple([
+                        donor: donor, split: 'test', build_split: 'test',
+                        output_prefix: 'test', chroms: chrom_str,
+                        encoding_mode: encoding, paralog: opts.paralog,
+                        remove_missing: opts.remove_missing,
+                        reference: opts.reference,
+                        skip_empty_genes: true,
+                    ], input_tsv)
+                }
+            }
+            jobs
+        }
+
+    BUILD_H5_AG(ag_jobs)
 }
 
 

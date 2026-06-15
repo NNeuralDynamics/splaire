@@ -1,3 +1,6 @@
+export REPO=/path/to/splaire
+export OUT=/path/to/output_dir
+export DATA=/path/to/splice_tables
 export AG_ENV_PREFIX=/path/to/conda_envs/alphagenome_env
 export SPLAIRE_ENV_PREFIX=/path/to/conda_envs/splaire_env
 export SA_ENV_PREFIX=/path/to/conda_envs/sa_env
