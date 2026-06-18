@@ -17,12 +17,12 @@ per-fold parquet columns:
 
 final merged parquet: GT once + each fold's pred cols horizontally concatenated.
 
-junctions are written to a sidecar parquet (variable n_junctions per gene).
-disabled via --skip-junctions.
+junctions are written to a sidecar parquet (variable n_junctions per gene) only
+when --with-junctions is set. dense + large; off by default.
 
 usage:
     python score_alphagenome.py input.h5 output.parquet \\
-        [--folds fold_0,fold_1,fold_2,fold_3] [--skip-junctions] [--keep-temp]
+        [--folds fold_0,fold_1,fold_2,fold_3] [--with-junctions] [--keep-temp]
 """
 
 import argparse
@@ -318,7 +318,8 @@ def main():
     parser.add_argument("--folds", default="fold_0,fold_1,fold_2,fold_3")
     parser.add_argument("--source", default="huggingface",
                         choices=["huggingface", "kaggle"])
-    parser.add_argument("--skip-junctions", action="store_true")
+    parser.add_argument("--with-junctions", action="store_true",
+                        help="enable junctions output (off by default; dense + large)")
     parser.add_argument("--keep-temp", action="store_true",
                         help="do not delete per-fold temp parquets after merge")
     parser.add_argument("--no-merge", action="store_true",
@@ -328,7 +329,7 @@ def main():
     args = parser.parse_args()
 
     folds = [f.strip() for f in args.folds.split(",") if f.strip()]
-    include_junctions = not args.skip_junctions
+    include_junctions = args.with_junctions
     print(f"folds={folds}, include_junctions={include_junctions}", flush=True)
 
     out_base = args.output_parquet[:-len('.parquet')] if args.output_parquet.endswith('.parquet') \

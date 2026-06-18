@@ -10,7 +10,7 @@
 
 # per-donor AlphaGenome scoring on per-gene h5s (build_h5_alphagenome.py output).
 # script outputs raw per-track per-fold predictions (no aggregation).
-# override via AG_FLAGS env var, e.g. AG_FLAGS="--folds fold_0 --skip-junctions"
+# override via AG_FLAGS env var, e.g. AG_FLAGS="--folds fold_0 --with-junctions"
 #
 # usage: sbatch score_ag.sbatch input_dir_ag output_dir
 #   input_dir_ag: e.g. ${OUT}/${tissue}/ml_data_var_ag/individual
