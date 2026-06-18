@@ -3,12 +3,14 @@
 
 import argparse
 import json
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 
 from metrics import classification, classification_posfirst, regression
 
@@ -39,6 +41,10 @@ models = {
         "avg_tissue",
     ]),
     "_merlin": ("merlin", ["acceptor", "donor", "ssu"]),
+    "_rinalmo": ("rinalmo", ["acceptor", "donor"]),
+    "_ag": ("alphagenome", ["acceptor", "donor", "ssu"]),
+    "_dsm": ("deltasplice", ["acceptor", "donor"]),
+    "_dsh": ("deltasplice_human", ["acceptor", "donor"]),
 }
 
 
@@ -53,11 +59,22 @@ def find_prediction_files(pred_dir):
     return files
 
 
-def load_predictions(pred_dir):
-    """load ground truth and model predictions from parquets"""
+def load_predictions(pred_dir, drop_chr9=True):
+    """load ground truth and model predictions from parquets
+
+    drop_chr9: filter out chr9 positions (in our validation, not test).
+    loads all non-coord columns from each parquet so per-replicate columns
+    (e.g. acceptor_rep1) are picked up alongside the averaged columns.
+    """
     files = find_prediction_files(pred_dir)
     gt_cols = ["chrom", "pos", "strand", "y_acceptor", "y_donor", "y_ssu"]
     any_df = pd.read_parquet(next(iter(files.values())), columns=gt_cols)
+    if drop_chr9:
+        keep = any_df["chrom"].values != 9
+        any_df = any_df.loc[keep].reset_index(drop=True)
+        print(f"dropped chr9: {len(keep) - keep.sum():,} positions removed", flush=True)
+    else:
+        keep = None
     truth = {
         "acceptor": any_df["y_acceptor"].values.astype(np.float32),
         "donor": any_df["y_donor"].values.astype(np.float32),
@@ -65,13 +82,15 @@ def load_predictions(pred_dir):
     }
     coords = any_df[["chrom", "pos", "strand"]].copy()
     del any_df
-    # reverse lookup: model name -> expected columns
-    name_to_cols = {name: cols for _suffix, (name, cols) in models.items()}
+
     preds = {}
     for name, path in files.items():
-        cols = name_to_cols[name]
-        df = pd.read_parquet(path, columns=cols)
-        preds[name] = {c: df[c].values.astype(np.float32) for c in cols}
+        df = pd.read_parquet(path)
+        if keep is not None:
+            df = df.loc[keep].reset_index(drop=True)
+        # all non-coord, non-truth columns are predictions (incl. per-rep)
+        pred_cols = [c for c in df.columns if c not in coord_cols]
+        preds[name] = {c: df[c].values.astype(np.float32) for c in pred_cols}
         del df
     return truth, preds, coords
 
@@ -126,7 +145,7 @@ def build_keep_mask(truth, tau_groups_arr, rng, neg_ratio=20):
 
 def load_shared_sites(matrix_path):
     """splice sites valid across all samples, filtered to test chroms"""
-    test_chroms = {f"chr{c}" for c in [1, 3, 5, 7]}
+    test_chroms = {f"chr{c}" for c in [1, 3, 5, 7, 9]}
 
     with open(matrix_path) as f:
         header = f.readline().strip().split('\t')
@@ -161,17 +180,225 @@ def build_shared_mask(coords_df, shared_sites):
     return np.isin(keys, shared_keys)
 
 
+def load_truth_coords_files(input_path, drop_chr9=True, paralog_exclude=None, only_models=None):
+    """load truth + coords once; return file map + combined keep_mask (chr9 + paralog).
+
+    only_models: optional set of model names to restrict the file map to. truth is
+    loaded from the first remaining file, so when one model's parquet has a different
+    row set (e.g. merlin already excludes chr9), the truth + keep_mask align with it.
+    """
+    files = find_prediction_files(input_path)
+    if not files:
+        raise ValueError(f"no prediction parquets found in {input_path}")
+    if only_models:
+        files = {k: v for k, v in files.items() if k in only_models}
+        if not files:
+            raise ValueError(f"no parquets match only_models {only_models} in {input_path}")
+        print(f"--only-models filter: scoring {list(files.keys())}", flush=True)
+    gt_cols = ["chrom", "pos", "strand", "y_acceptor", "y_donor", "y_ssu"]
+    any_path = next(iter(files.values()))
+    df = pd.read_parquet(any_path, columns=gt_cols)
+
+    keep = np.ones(len(df), dtype=bool)
+    if drop_chr9:
+        chr9_keep = df["chrom"].values != 9
+        keep &= chr9_keep
+        print(f"dropped chr9: {(~chr9_keep).sum():,} positions removed", flush=True)
+    if paralog_exclude is not None:
+        exclude_keys = (paralog_exclude["chrom"].astype(np.int64) * 1_000_000_000
+                        + paralog_exclude["pos"].astype(np.int64))
+        df_keys = (df["chrom"].values.astype(np.int64) * 1_000_000_000
+                    + df["pos"].values.astype(np.int64))
+        paralog_keep = ~np.isin(df_keys, exclude_keys)
+        keep &= paralog_keep
+        print(f"paralog-filter: excluded {(~paralog_keep).sum():,} positions", flush=True)
+
+    if keep.all():
+        keep = None
+        df_filt = df
+    else:
+        df_filt = df.loc[keep].reset_index(drop=True)
+    print(f"final kept positions: {len(df_filt):,}", flush=True)
+
+    truth = {
+        "acceptor": df_filt["y_acceptor"].values.astype(np.float32),
+        "donor": df_filt["y_donor"].values.astype(np.float32),
+        "ssu": df_filt["y_ssu"].values.astype(np.float32),
+    }
+    coords = df_filt[["chrom", "pos", "strand"]].copy()
+    return truth, coords, files, keep
+
+
+def group_pred_columns(pred_cols):
+    """group prediction columns by rep or fold suffix; returns [(batch_name, [cols]), ...]
+    recognizes:
+      *_rep<N>                — replicate ensembles (splaire, spliceai, pangolin, deltasplice)
+      *_fold_<N>              — alphagenome fold (acceptor/donor)
+      *_fold_<N>_track<T>     — alphagenome per-fold per-tissue-track ssu
+      everything else         — goes in 'avg' batch
+    each batch keeps acceptor/donor/ssu paired so combined-cls metrics still work.
+    """
+    by_batch = {}
+    for c in pred_cols:
+        m_rep = re.search(r"_rep(\d+)$", c)
+        m_fold = re.search(r"_fold_(\d+)(?:_track_\d+)?$", c)
+        if m_rep:
+            batch = f"rep{m_rep.group(1)}"
+        elif m_fold:
+            batch = f"fold{m_fold.group(1)}"
+        else:
+            batch = "avg"
+        by_batch.setdefault(batch, []).append(c)
+    keys = []
+    if "avg" in by_batch:
+        keys.append("avg")
+    keys += sorted([k for k in by_batch if k.startswith("rep")], key=lambda x: int(x[3:]))
+    keys += sorted([k for k in by_batch if k.startswith("fold")], key=lambda x: int(x[4:]))
+    return [(k, by_batch[k]) for k in keys]
+
+
+def merge_results(target, partial, overwrite=False):
+    """recursively merge partial results into target; new keys added, existing
+    leaves preserved (default) or replaced (overwrite=True). use overwrite=True
+    when refreshing one model's metrics in a JSON that already contains them."""
+    for k, v in partial.items():
+        if k not in target:
+            target[k] = v
+        elif isinstance(v, dict) and isinstance(target[k], dict):
+            merge_results(target[k], v, overwrite=overwrite)
+        elif overwrite:
+            target[k] = v
+    return target
+
+
+def precompute_context(truth, valid_all_mask=None, regression_only=False, splice_combined=False):
+    """precompute all truth-derived indices and masks; reused across streaming batches.
+    expensive flatnonzero/concatenate ops on 100M+ position arrays are done once here."""
+    is_acc = truth["acceptor"] == 1
+    is_don = truth["donor"] == 1
+    is_neither = ~is_acc & ~is_don
+    ssu = truth["ssu"]
+
+    if regression_only:
+        masks = {
+            "ssu_valid": ssu != sentinel,
+            "ssu_valid_nonzero": (ssu != sentinel) & (ssu > 0),
+        }
+    else:
+        masks = {
+            "all": np.ones(ssu.size, dtype=bool),
+            "ssu_valid": ssu != sentinel,
+            "ssu_valid_nonzero": (ssu != sentinel) & (ssu > 0),
+        }
+    if valid_all_mask is not None:
+        masks["ssu_shared"] = valid_all_mask
+        masks["ssu_shared_nonzero"] = valid_all_mask & (ssu > 0)
+
+    neither_idx = np.flatnonzero(is_neither)
+    reg_subsets = [k for k in masks if k != "all"]
+    cls_subsets = [k for k in reg_subsets if not k.startswith("ssu_shared")]
+
+    counts = {
+        "n_positions": int(ssu.size),
+        "n_acceptors": int(is_acc.sum()),
+        "n_donors": int(is_don.sum()),
+        "n_neither": int(neither_idx.size),
+    }
+
+    # cls indices per (subset, target)
+    cls_indices = {}
+    if not regression_only:
+        is_splice = is_acc | is_don
+        for subset, mask in masks.items():
+            cls_indices[subset] = {}
+            if splice_combined:
+                pos_mask = is_splice & mask
+                pos_idx = np.flatnonzero(pos_mask)
+                include_idx = np.flatnonzero(pos_mask | is_neither)
+                y_true = pos_mask[include_idx].astype(np.float32)
+                cls_indices[subset]["splice"] = {"pos_idx": pos_idx, "include_idx": include_idx, "y_true": y_true}
+            else:
+                for target, is_target in [("acceptor", is_acc), ("donor", is_don)]:
+                    pos_mask = is_target & mask
+                    pos_idx = np.flatnonzero(pos_mask)
+                    include_idx = np.flatnonzero(pos_mask | is_neither)
+                    y_true = pos_mask[include_idx].astype(np.float32)
+                    cls_indices[subset][target] = {"pos_idx": pos_idx, "include_idx": include_idx, "y_true": y_true}
+
+    # regression site indices per subset
+    reg_indices = {}
+    for subset in reg_subsets:
+        mask = masks[subset]
+        site_idx = np.flatnonzero((is_acc | is_don) & mask)
+        y_true_reg = ssu[site_idx].astype(np.float32)
+        acc_idx = np.flatnonzero(is_acc & mask)
+        don_idx = np.flatnonzero(is_don & mask)
+        y_true_cls = np.concatenate([ssu[acc_idx], ssu[don_idx]]).astype(np.float32)
+        reg_indices[subset] = {"site_idx": site_idx, "y_true_reg": y_true_reg,
+                               "acc_idx": acc_idx, "don_idx": don_idx, "y_true_cls": y_true_cls}
+
+    # ssu bins
+    bin_edges = np.arange(0, 1.1, 0.1)
+    site_bins = np.clip(np.digitize(ssu, bin_edges) - 1, 0, 9)
+
+    # binned regression indices per (subset, bin)
+    binned_reg_indices = {}
+    for subset in reg_subsets:
+        mask = masks[subset]
+        binned_reg_indices[subset] = {}
+        for b in range(10):
+            in_bin = site_bins == b
+            site_idx = np.flatnonzero((is_acc | is_don) & mask & in_bin)
+            if site_idx.size == 0:
+                continue
+            y_true_reg = ssu[site_idx].astype(np.float32)
+            acc_idx = np.flatnonzero(is_acc & mask & in_bin)
+            don_idx = np.flatnonzero(is_don & mask & in_bin)
+            y_true_cls = np.concatenate([ssu[acc_idx], ssu[don_idx]]).astype(np.float32) if (acc_idx.size > 0 or don_idx.size > 0) else None
+            binned_reg_indices[subset][b] = {"site_idx": site_idx, "y_true_reg": y_true_reg,
+                                              "acc_idx": acc_idx, "don_idx": don_idx, "y_true_cls": y_true_cls}
+
+    # pos_per_bin for ratio-preserving binned classification
+    pos_per_bin_cache = {}
+    if not regression_only:
+        for subset in cls_subsets:
+            mask = masks[subset]
+            pos_per_bin_cache[subset] = {}
+            for target, is_target in [("acceptor", is_acc), ("donor", is_don)]:
+                pos_mask = is_target & mask
+                pos_per_bin = {b: np.flatnonzero(pos_mask & (site_bins == b)) for b in range(10)}
+                pos_per_bin = {b: idx for b, idx in pos_per_bin.items() if idx.size > 0}
+                pos_per_bin_cache[subset][target] = pos_per_bin
+
+    return {
+        "is_acc": is_acc, "is_don": is_don, "is_neither": is_neither, "ssu": ssu,
+        "masks": masks, "neither_idx": neither_idx,
+        "reg_subsets": reg_subsets, "cls_subsets": cls_subsets,
+        "counts": counts,
+        "cls_indices": cls_indices, "reg_indices": reg_indices,
+        "site_bins": site_bins, "binned_reg_indices": binned_reg_indices,
+        "pos_per_bin_cache": pos_per_bin_cache,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("input_path")
     parser.add_argument("output_json")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--no-binned", action="store_true")
+    parser.add_argument("--no-binned-cls", action="store_true", help="skip ratio-preserving binned classification (slowest stage); keep binned regression")
+    parser.add_argument("--paralog-mask", help="npy file with structured array (chrom int8, pos int32) of (chrom, pos) positions to EXCLUDE (paralog filter). truth/preds at these positions are set to non-splice / dropped before metrics.")
     parser.add_argument("--no-cls", action="store_true", help="skip all classification metrics")
     parser.add_argument("--regression-only", action="store_true", help="only compute regression (overall + binned) on valid-SSU splice sites")
     parser.add_argument("--splicing-matrix", help="processed_splicing_matrix.tsv for shared-valid site filtering")
     parser.add_argument("--splice-combined", action="store_true", help="use max(acc,don) for classification (for data where all sites are both)")
     parser.add_argument("--tau-groups", help="CSV (chrom, pos, strand, group) for per-site tau group classification; adds classification_tau_group block to output")
+    parser.add_argument("--phase", choices=["both", "reg", "cls"], default="both",
+                        help="which phase to run. 'cls' loads existing JSON and only runs Phase 2 (classification); useful for resuming after a timeout.")
+    parser.add_argument("--ensemble-only", action="store_true",
+                        help="skip per-replicate batches; only compute metrics on the ensemble-averaged batch.")
+    parser.add_argument("--only-models", help="comma-separated list of model names; only score these (e.g. 'merlin'). when output JSON already exists, results are merged into it — non-listed models in the existing JSON are preserved, listed models are refreshed.")
     args = parser.parse_args()
 
     input_path = Path(args.input_path)
@@ -224,14 +451,23 @@ def main():
 
         skip_cls = args.no_cls or args.regression_only
         skip_binned = args.no_binned and not args.regression_only
-        results = compute_metrics(truth, preds, skip_binned=skip_binned, skip_cls=skip_cls, splice_combined=args.splice_combined, regression_only=args.regression_only, tau_groups=tau_groups)
+        results = compute_metrics(truth, preds, skip_binned=skip_binned, skip_cls=skip_cls, skip_binned_cls=args.no_binned_cls, splice_combined=args.splice_combined, regression_only=args.regression_only, tau_groups=tau_groups)
         with open(output, 'w') as f:
             json.dump({"overall": results}, f, indent=2, default=float)
 
     else:
         print(f"processing {input_path.name}", flush=True)
-        truth, preds, coords = load_predictions(input_path)
-
+        # optional paralog exclusion mask
+        paralog_exclude = None
+        if args.paralog_mask:
+            paralog_exclude = np.load(args.paralog_mask)
+            print(f"loaded paralog exclude mask: {len(paralog_exclude):,} (chrom, pos) entries", flush=True)
+        # stream per-model, per-rep batch to keep memory bounded.
+        # filter files BEFORE truth is loaded so keep_mask aligns with the model's row count
+        # (e.g. merlin parquet already excludes chr9 — wrong-sized mask if truth is loaded from another model)
+        only_models = set(args.only_models.split(",")) if args.only_models else None
+        truth, coords, files, keep_mask = load_truth_coords_files(
+            input_path, drop_chr9=True, paralog_exclude=paralog_exclude, only_models=only_models)
         print(f"{truth['acceptor'].size:,} positions, {(truth['acceptor'] == 1).sum():,} acceptors", flush=True)
 
         shared_mask = None
@@ -242,84 +478,124 @@ def main():
             print(f"shared-valid: {len(shared_sites):,} sites in matrix, {(shared_mask & is_splice).sum():,} splice sites matched", flush=True)
 
         tau_groups = load_tau_groups(args.tau_groups, coords) if args.tau_groups else None
+        del coords
 
         skip_cls = args.no_cls or args.regression_only
         skip_binned = args.no_binned and not args.regression_only
-        results = compute_metrics(truth, preds, skip_binned=skip_binned, skip_cls=skip_cls, splice_combined=args.splice_combined, regression_only=args.regression_only, valid_all_mask=shared_mask, tau_groups=tau_groups)
-        with open(output, 'w') as f:
-            json.dump({"overall": results}, f, indent=2, default=float)
+        skip_binned_cls = args.no_binned_cls
+
+        # precompute truth-derived context once; reused across all batches
+        print("precomputing truth-derived context...", flush=True)
+        ctx = precompute_context(truth, valid_all_mask=shared_mask,
+                                  regression_only=args.regression_only,
+                                  splice_combined=args.splice_combined)
+
+        # collect (model, batch_name, batch_cols, path) tuples once
+        all_batches = []
+        for model_name, path in files.items():
+            schema_cols = pq.ParquetFile(path).schema_arrow.names
+            pred_cols = [c for c in schema_cols if c not in coord_cols]
+            for batch_name, batch_cols in group_pred_columns(pred_cols):
+                if args.ensemble_only and batch_name != "avg":
+                    continue
+                all_batches.append((model_name, batch_name, batch_cols, path))
+        if args.ensemble_only:
+            print(f"ensemble-only: {len(all_batches)} batches (per-rep skipped)", flush=True)
+
+        def load_batch(path, batch_cols):
+            df = pd.read_parquet(path, columns=batch_cols)
+            if keep_mask is not None:
+                arr_dict = {c: df[c].values[keep_mask].astype(np.float32) for c in batch_cols}
+            else:
+                arr_dict = {c: df[c].values.astype(np.float32) for c in batch_cols}
+            del df
+            return arr_dict
+
+        results = None
+
+        # load existing JSON if:
+        #   - --phase=cls (resume Phase 2 without losing Phase 1 results), or
+        #   - --only-models (refresh some models, preserve the rest already in the JSON)
+        if (args.phase == "cls" or only_models) and output.exists():
+            with open(output) as f:
+                results = json.load(f).get("overall", {})
+            print(f"loaded existing results from {output} ({len(results)} top-level keys)", flush=True)
+
+        # Phase 1: regression across all batches (fast) — skip if --phase=cls
+        if args.phase == "cls":
+            print(f"\n=== Phase 1 skipped (--phase=cls) ===", flush=True)
+        else:
+            print(f"\n=== Phase 1: regression across {len(all_batches)} batches ===", flush=True)
+        for model_name, batch_name, batch_cols, path in (all_batches if args.phase != "cls" else []):
+            print(f"  [reg] {model_name} batch {batch_name}: {len(batch_cols)} cols", flush=True)
+            arr_dict = load_batch(path, batch_cols)
+            preds_batch = {model_name: arr_dict}
+            partial = compute_metrics(truth, preds_batch,
+                                      skip_binned=skip_binned, skip_cls=True,
+                                      skip_binned_cls=True,
+                                      splice_combined=args.splice_combined,
+                                      regression_only=args.regression_only,
+                                      valid_all_mask=shared_mask, tau_groups=tau_groups,
+                                      ctx=ctx)
+            if results is None:
+                results = partial
+            else:
+                merge_results(results, partial, overwrite=bool(only_models))
+            with open(output, 'w') as f:
+                json.dump({"overall": results}, f, indent=2, default=float)
+            del preds_batch, arr_dict, partial
+        print(f"=== Phase 1 done; regression saved to {output} ===", flush=True)
+
+        # Phase 2: classification across all batches (slow) — skip if --phase=reg
+        if not skip_cls and args.phase != "reg":
+            print(f"\n=== Phase 2: classification across {len(all_batches)} batches ===", flush=True)
+            for model_name, batch_name, batch_cols, path in all_batches:
+                print(f"  [cls] {model_name} batch {batch_name}: {len(batch_cols)} cols", flush=True)
+                arr_dict = load_batch(path, batch_cols)
+                preds_batch = {model_name: arr_dict}
+                partial = compute_metrics(truth, preds_batch,
+                                          skip_binned=skip_binned, skip_cls=False,
+                                          skip_reg=True, skip_binned_reg=True,
+                                          skip_binned_cls=skip_binned_cls,
+                                          splice_combined=args.splice_combined,
+                                          regression_only=args.regression_only,
+                                          valid_all_mask=shared_mask, tau_groups=tau_groups,
+                                          ctx=ctx)
+                merge_results(results, partial, overwrite=bool(only_models))
+                with open(output, 'w') as f:
+                    json.dump({"overall": results}, f, indent=2, default=float)
+                del preds_batch, arr_dict, partial
+            print(f"=== Phase 2 done; full results in {output} ===", flush=True)
 
     print(f"wrote {args.output_json}", flush=True)
     return 0
 
 
-def compute_metrics(truth, preds, skip_binned=False, skip_cls=False, splice_combined=False, regression_only=False, valid_all_mask=None, tau_groups=None):
-    """classification + regression metrics for all models"""
-    is_acc = truth["acceptor"] == 1
-    is_don = truth["donor"] == 1
-    is_neither = ~is_acc & ~is_don
-    ssu = truth["ssu"]
+def compute_metrics(truth, preds, skip_binned=False, skip_cls=False, skip_reg=False, skip_binned_cls=False, skip_binned_reg=False, splice_combined=False, regression_only=False, valid_all_mask=None, tau_groups=None, ctx=None):
+    """classification + regression metrics for all models. ctx is the optional precomputed
+    truth-derived context dict; if None, computed inline (used by --all path)."""
+    if ctx is None:
+        ctx = precompute_context(truth, valid_all_mask=valid_all_mask,
+                                  regression_only=regression_only, splice_combined=splice_combined)
 
-    # all splice sites marked as both acceptor and donor
+    is_acc = ctx["is_acc"]
+    is_don = ctx["is_don"]
+    is_neither = ctx["is_neither"]
+    ssu = ctx["ssu"]
+    masks = ctx["masks"]
+    neither_idx = ctx["neither_idx"]
+    reg_subsets = ctx["reg_subsets"]
+    cls_indices = ctx["cls_indices"]
+    reg_indices = ctx["reg_indices"]
+
     if splice_combined:
         is_splice = is_acc | is_don
-        print(f"splice_combined mode: {is_splice.sum():,} splice sites", flush=True)
-
-    if regression_only:
-        # only positions with valid ssu
-        n_valid = (ssu != sentinel).sum()
-        n_splice_valid = ((is_acc | is_don) & (ssu != sentinel)).sum()
-        print(f"regression-only mode: {n_splice_valid:,} splice sites with valid SSU (of {n_valid:,} valid)", flush=True)
-        masks = {
-            "ssu_valid": ssu != sentinel,
-            "ssu_valid_nonzero": (ssu != sentinel) & (ssu > 0),
-        }
-    else:
-        masks = {
-            "all": np.ones(ssu.size, dtype=bool),
-            "ssu_valid": ssu != sentinel,
-            "ssu_valid_nonzero": (ssu != sentinel) & (ssu > 0),
-        }
-
-    # sites valid in all samples from --splicing-matrix
-    if valid_all_mask is not None:
-        masks["ssu_shared"] = valid_all_mask
-        masks["ssu_shared_nonzero"] = valid_all_mask & (ssu > 0)
-
-    neither_idx = np.flatnonzero(is_neither)
-
-    # regression subsets, everything except "all" which has no ssu ground truth
-    reg_subsets = [k for k in masks if k != "all"]
 
     results = {
-        "counts": {
-            "n_positions": int(ssu.size),
-            "n_acceptors": int(is_acc.sum()),
-            "n_donors": int(is_don.sum()),
-            "n_neither": int(neither_idx.size),
-        },
+        "counts": ctx["counts"],
         "classification": {},
         "regression": {},
     }
-
-    if not regression_only:
-        # pre-compute indices for classification
-        cls_indices = {}
-        for subset, mask in masks.items():
-            cls_indices[subset] = {}
-            if splice_combined:
-                pos_mask = is_splice & mask
-                pos_idx = np.flatnonzero(pos_mask)
-                include_idx = np.flatnonzero(pos_mask | is_neither)
-                y_true = pos_mask[include_idx].astype(np.float16)
-                cls_indices[subset]["splice"] = {"pos_idx": pos_idx, "include_idx": include_idx, "y_true": y_true}
-            else:
-                for target, is_target in [("acceptor", is_acc), ("donor", is_don)]:
-                    pos_mask = is_target & mask
-                    pos_idx = np.flatnonzero(pos_mask)
-                    include_idx = np.flatnonzero(pos_mask | is_neither)
-                    y_true = pos_mask[include_idx].astype(np.float16)
-                    cls_indices[subset][target] = {"pos_idx": pos_idx, "include_idx": include_idx, "y_true": y_true}
 
     # add combined predictions (max of acc/don) for models with both outputs
     if splice_combined:
@@ -327,33 +603,67 @@ def compute_metrics(truth, preds, skip_binned=False, skip_cls=False, splice_comb
             if "acceptor" in p and "donor" in p:
                 p["splice"] = np.maximum(p["acceptor"], p["donor"])
 
-    # regression
-    print("computing regression", flush=True)
-    for subset in reg_subsets:
-        mask = masks[subset]
-        site_idx = np.flatnonzero((is_acc | is_don) & mask)
-        y_true = ssu[site_idx].astype(np.float32)
+    # add mean-across-tracks ssu aggregate for ag per-fold (matches splaire cross-tissue-mean target)
+    for model, p in preds.items():
+        fold_tracks = {}
+        for key in list(p.keys()):
+            m = re.match(r"ssu_fold_(\d+)_track_\d+$", key)
+            if m:
+                fold_tracks.setdefault(m.group(1), []).append(key)
+        for fold, keys in fold_tracks.items():
+            mean_key = f"ssu_fold_{fold}_mean"
+            if mean_key in p:
+                continue
+            acc = np.zeros_like(p[keys[0]], dtype=np.float64)
+            for k in keys:
+                acc += p[k]
+            p[mean_key] = (acc / len(keys)).astype(np.float32)
 
+    # regression — use cached indices from ctx
+    if skip_reg:
+        print("skipping regression (--phase=cls)", flush=True)
+        reg_subsets_iter = []
+    else:
+        print("computing regression", flush=True)
+        reg_subsets_iter = reg_subsets
+    for subset in reg_subsets_iter:
+        ri = reg_indices[subset]
+        site_idx = ri["site_idx"]
+        y_true = ri["y_true_reg"]
         if not splice_combined:
-            acc_idx = np.flatnonzero(is_acc & mask)
-            don_idx = np.flatnonzero(is_don & mask)
-            y_true_cls = np.concatenate([ssu[acc_idx], ssu[don_idx]]).astype(np.float32)
+            acc_idx = ri["acc_idx"]
+            don_idx = ri["don_idx"]
+            y_true_cls = ri["y_true_cls"]
 
         results["regression"][subset] = {}
         for model, p in preds.items():
-            # acceptor/donor outputs combined
-            if "acceptor" in p and "donor" in p:
-                col = f"{model}_cls"
-                if splice_combined:
+            # acceptor/donor outputs combined (averaged + per-rep + per-fold)
+            acc_keys = sorted(k for k in p if k == "acceptor" or k.startswith("acceptor_rep") or k.startswith("acceptor_fold_"))
+            don_keys = sorted(k for k in p if k == "donor" or k.startswith("donor_rep") or k.startswith("donor_fold_"))
+            paired = []
+            if "acceptor" in acc_keys and "donor" in don_keys:
+                paired.append(("acceptor", "donor", "_cls"))
+            for ak in acc_keys:
+                if ak == "acceptor":
+                    continue
+                suffix = ak[len("acceptor_"):]  # rep1, fold_0, ...
+                dk = f"donor_{suffix}"
+                if dk in don_keys:
+                    paired.append((ak, dk, f"_cls_{suffix}"))
+
+            for ak, dk, col_suffix in paired:
+                col = f"{model}{col_suffix}"
+                if splice_combined and col_suffix == "_cls":
                     y_pred_cls = p["splice"][site_idx].astype(np.float32)
                     results["regression"][subset][col] = regression(y_true, y_pred_cls)
                 else:
-                    y_pred_cls = np.concatenate([p["acceptor"][acc_idx], p["donor"][don_idx]]).astype(np.float32)
+                    y_pred_cls = np.concatenate([p[ak][acc_idx], p[dk][don_idx]]).astype(np.float32)
                     results["regression"][subset][col] = regression(y_true_cls, y_pred_cls)
 
             # single-score outputs like ssu, tissue predictions
+            paired_keys = {k for ak, dk, _ in paired for k in (ak, dk)}
             for key, arr in p.items():
-                if key in ["acceptor", "donor", "neither", "splice"]:
+                if key in paired_keys or key in ("neither", "splice"):
                     continue
                 col = f"{model}_{key}"
                 y_pred = arr[site_idx].astype(np.float32)
@@ -377,14 +687,16 @@ def compute_metrics(truth, preds, skip_binned=False, skip_cls=False, splice_comb
                         if key == "neither":
                             continue
                         if splice_combined:
-                            if key in ["acceptor", "donor"]:
+                            if key in ["acceptor", "donor"] or key.startswith("acceptor_rep") or key.startswith("donor_rep"):
                                 continue
                             col = model if key == "splice" else f"{model}_{key}"
                         else:
-                            if key != target and key in ["acceptor", "donor"]:
+                            # skip wrong-target acceptor/donor (incl. per-rep + per-fold)
+                            other = "donor" if target == "acceptor" else "acceptor"
+                            if key == other or key.startswith(f"{other}_rep") or key.startswith(f"{other}_fold_"):
                                 continue
                             col = model if key in ["acceptor", "donor"] else f"{model}_{key}"
-                        tasks.append((col, arr[include_idx].astype(np.float16)))
+                        tasks.append((col, arr[include_idx].astype(np.float32)))
 
                 target_results = {}
                 if tasks:
@@ -397,42 +709,35 @@ def compute_metrics(truth, preds, skip_binned=False, skip_cls=False, splice_comb
 
     # binned metrics
     if not skip_binned:
-        results["binned"] = compute_binned(is_acc, is_don, ssu, masks, neither_idx, preds, regression_only=regression_only, tau_groups=tau_groups)
+        results["binned"] = compute_binned(preds, ctx, regression_only=regression_only, skip_binned_cls=skip_binned_cls, skip_binned_reg=skip_binned_reg, splice_combined=splice_combined, tau_groups=tau_groups)
 
     return results
 
 
-def compute_binned(is_acc, is_don, ssu, masks, neither_idx, preds, regression_only=False, tau_groups=None):
-    """binned metrics - ordered fast to slow"""
-    bin_edges = np.arange(0, 1.1, 0.1)
-    site_bins = np.clip(np.digitize(ssu, bin_edges) - 1, 0, 9)
-
-    reg_subsets = [k for k in masks if k != "all"]
-    # classification only uses ssu_valid/ssu_valid_nonzero, not ssu_shared
-    cls_subsets = [k for k in reg_subsets if not k.startswith("ssu_shared")]
+def compute_binned(preds, ctx, regression_only=False, skip_binned_cls=False, skip_binned_reg=False, splice_combined=False, tau_groups=None):
+    """binned metrics - ordered fast to slow. uses precomputed ctx for indices."""
+    is_acc = ctx["is_acc"]
+    is_don = ctx["is_don"]
+    ssu = ctx["ssu"]
+    masks = ctx["masks"]
+    neither_idx = ctx["neither_idx"]
+    site_bins = ctx["site_bins"]
+    binned_reg_indices = ctx["binned_reg_indices"]
+    pos_per_bin_cache = ctx["pos_per_bin_cache"]
+    reg_subsets = ctx["reg_subsets"]
+    cls_subsets = ctx["cls_subsets"]
 
     results = {
         "counts": {},
         "regression": {},
     }
 
-    if not regression_only:
+    if not regression_only and not skip_binned_cls:
         n_neg = neither_idx.size
         rng = np.random.default_rng(seed=42)
         shuffled_neg = rng.permutation(n_neg)
 
         results["classification_ratio"] = {}
-
-        # pre-compute pos_per_bin for all subsets/targets
-        pos_per_bin_cache = {}
-        for subset in cls_subsets:
-            mask = masks[subset]
-            pos_per_bin_cache[subset] = {}
-            for target, is_target in [("acceptor", is_acc), ("donor", is_don)]:
-                pos_mask = is_target & mask
-                pos_per_bin = {b: np.flatnonzero(pos_mask & (site_bins == b)) for b in range(10)}
-                pos_per_bin = {b: idx for b, idx in pos_per_bin.items() if idx.size > 0}
-                pos_per_bin_cache[subset][target] = pos_per_bin
 
     # counts
     for b in range(10):
@@ -442,34 +747,52 @@ def compute_binned(is_acc, is_don, ssu, masks, neither_idx, preds, regression_on
             "n_don": int((is_don & masks["ssu_valid"] & in_bin).sum()),
         }
 
-    # regression
-    print("computing binned regression", flush=True)
-    for subset in reg_subsets:
-        mask = masks[subset]
+    # regression — use cached binned_reg_indices
+    if skip_binned_reg:
+        print("skipping binned regression (--phase=cls)", flush=True)
+        binned_reg_iter = []
+    else:
+        print("computing binned regression", flush=True)
+        binned_reg_iter = reg_subsets
+    for subset in binned_reg_iter:
         results["regression"][subset] = {}
 
         for b in range(10):
-            in_bin = site_bins == b
-            site_idx = np.flatnonzero((is_acc | is_don) & mask & in_bin)
-            if site_idx.size == 0:
+            if b not in binned_reg_indices.get(subset, {}):
                 continue
-
-            y_true = ssu[site_idx].astype(np.float32)
-            acc_idx = np.flatnonzero(is_acc & mask & in_bin)
-            don_idx = np.flatnonzero(is_don & mask & in_bin)
+            bri = binned_reg_indices[subset][b]
+            site_idx = bri["site_idx"]
+            y_true = bri["y_true_reg"]
+            acc_idx = bri["acc_idx"]
+            don_idx = bri["don_idx"]
 
             for model, p in preds.items():
-                if "acceptor" in p and "donor" in p:
-                    col = f"{model}_cls"
-                    if acc_idx.size > 0 or don_idx.size > 0:
-                        y_true_cls = np.concatenate([ssu[acc_idx], ssu[don_idx]]).astype(np.float32)
-                        y_pred_cls = np.concatenate([p["acceptor"][acc_idx], p["donor"][don_idx]]).astype(np.float32)
+                # combine acc+don pairs (averaged + per-rep + per-fold)
+                acc_keys = sorted(k for k in p if k == "acceptor" or k.startswith("acceptor_rep") or k.startswith("acceptor_fold_"))
+                don_keys = sorted(k for k in p if k == "donor" or k.startswith("donor_rep") or k.startswith("donor_fold_"))
+                paired = []
+                if "acceptor" in acc_keys and "donor" in don_keys:
+                    paired.append(("acceptor", "donor", "_cls"))
+                for ak in acc_keys:
+                    if ak == "acceptor":
+                        continue
+                    suffix = ak[len("acceptor_"):]
+                    dk = f"donor_{suffix}"
+                    if dk in don_keys:
+                        paired.append((ak, dk, f"_cls_{suffix}"))
+
+                for ak, dk, col_suffix in paired:
+                    col = f"{model}{col_suffix}"
+                    if bri["y_true_cls"] is not None:
+                        y_true_cls = bri["y_true_cls"]
+                        y_pred_cls = np.concatenate([p[ak][acc_idx], p[dk][don_idx]]).astype(np.float32)
                         if col not in results["regression"][subset]:
                             results["regression"][subset][col] = {}
                         results["regression"][subset][col][f"bin_{b}"] = regression(y_true_cls, y_pred_cls)
 
+                paired_keys = {k for ak, dk, _ in paired for k in (ak, dk)}
                 for key, arr in p.items():
-                    if key in ["acceptor", "donor", "neither"]:
+                    if key in paired_keys or key == "neither":
                         continue
                     col = f"{model}_{key}"
                     if col not in results["regression"][subset]:
@@ -477,7 +800,7 @@ def compute_binned(is_acc, is_don, ssu, masks, neither_idx, preds, regression_on
                     results["regression"][subset][col][f"bin_{b}"] = regression(y_true, arr[site_idx].astype(np.float32))
 
     # ratio-preserving binned classification
-    if not regression_only:
+    if not regression_only and not skip_binned_cls:
         print("computing binned classification (ratio-preserving)", flush=True)
         for subset in cls_subsets:
             results["classification_ratio"][subset] = {}
@@ -488,6 +811,8 @@ def compute_binned(is_acc, is_don, ssu, masks, neither_idx, preds, regression_on
                 neg_per_bin = balance_ratio_preserving(pos_per_bin, shuffled_neg, n_neg)
                 target_results = run_binned_classification(pos_per_bin, neg_per_bin, neither_idx, preds, target)
                 results["classification_ratio"][subset][target] = target_results
+    elif skip_binned_cls:
+        print("skipping binned classification (--no-binned-cls)", flush=True)
 
     # ratio-preserving classification per tau group (constitutive / intermediate / tissue-specific)
     # other-group positives are excluded entirely (positive only counts in its own group)
@@ -516,12 +841,13 @@ def compute_binned(is_acc, is_don, ssu, masks, neither_idx, preds, regression_on
 
 def run_grouped_classification(pos_per_grp, neg_per_grp, neither_idx, preds, target):
     """run classification for all tau groups, parallelized; same shape as run_binned_classification"""
+    other = "donor" if target == "acceptor" else "acceptor"
     tasks = []
     for model, p in preds.items():
         for key, arr in p.items():
             if key == "neither":
                 continue
-            if key != target and key in ["acceptor", "donor"]:
+            if key == other or key.startswith(f"{other}_rep") or key.startswith(f"{other}_fold_"):
                 continue
             col = model if key in ["acceptor", "donor"] else f"{model}_{key}"
             for g in pos_per_grp:
@@ -547,13 +873,14 @@ def run_grouped_classification(pos_per_grp, neg_per_grp, neither_idx, preds, tar
 
 def run_binned_classification(pos_per_bin, neg_per_bin, neither_idx, preds, target):
     """run classification for all bins, parallelized"""
+    other = "donor" if target == "acceptor" else "acceptor"
     tasks = []
     for model, p in preds.items():
         for key, arr in p.items():
             if key == "neither":
                 continue
-            # skip acc/don keys that dont match current target
-            if key != target and key in ["acceptor", "donor"]:
+            # skip wrong-target acc/don keys (incl. per-rep + per-fold)
+            if key == other or key.startswith(f"{other}_rep") or key.startswith(f"{other}_fold_"):
                 continue
             col = model if key in ["acceptor", "donor"] else f"{model}_{key}"
             for b in pos_per_bin:
