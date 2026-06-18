@@ -283,10 +283,10 @@ def score_table(model, df, out_prefix, window, model_name):
         chunks_ss = (min(8, n), window, SS_N_CHANNELS)
         f_h5.create_dataset("ref", shape=(n, window, SS_N_CHANNELS), dtype=np.float32,
                             fillvalue=np.nan, chunks=chunks_ss,
-                            compression="gzip", compression_opts=4)
+                            compression="gzip", compression_opts=9)
         f_h5.create_dataset("alt", shape=(n, window, SS_N_CHANNELS), dtype=np.float32,
                             fillvalue=np.nan, chunks=chunks_ss,
-                            compression="gzip", compression_opts=4)
+                            compression="gzip", compression_opts=9)
         str_dt = h5py.special_dtype(vlen=str)
         f_h5.create_dataset("var_key", data=df["variant_id"].values.astype(object), dtype=str_dt)
         f_h5.create_dataset("gene_strand", data=df["gene_strand"].values.astype(object), dtype=str_dt)

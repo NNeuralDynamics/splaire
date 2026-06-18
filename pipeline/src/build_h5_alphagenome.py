@@ -303,9 +303,9 @@ def build_gene_sequence(fasta, row, strand, mode='basic', reference_only=False):
 def write_entry(h5f, n, seq_str, y, gc, attrs, mode='basic'):
     """encode + write one entry to h5."""
     seq_int = seq_to_int_array(seq_str, mode=mode)
-    seq_ds = h5f.create_dataset(f"SEQ_{n}", data=seq_int, compression='gzip', compression_opts=4)
-    h5f.create_dataset(f"Y_{n}", data=y, compression='gzip', compression_opts=4)
-    h5f.create_dataset(f"GC_{n}", data=gc, compression='gzip', compression_opts=4)
+    seq_ds = h5f.create_dataset(f"SEQ_{n}", data=seq_int, compression='gzip', compression_opts=9)
+    h5f.create_dataset(f"Y_{n}", data=y, compression='gzip', compression_opts=9)
+    h5f.create_dataset(f"GC_{n}", data=gc, compression='gzip', compression_opts=9)
     for k, v in attrs.items():
         seq_ds.attrs[k] = v
 
