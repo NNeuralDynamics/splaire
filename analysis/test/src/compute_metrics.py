@@ -686,6 +686,10 @@ def compute_metrics(truth, preds, skip_binned=False, skip_cls=False, skip_reg=Fa
                     for key, arr in p.items():
                         if key == "neither":
                             continue
+                        # skip regression-only outputs (ssu tracks/mean, per-tissue usage).
+                        # these are NaN-masked at non-splice rows for ag → cls would drop all negatives.
+                        if key == "ssu" or key.startswith("ssu_") or key.endswith("_usage"):
+                            continue
                         if splice_combined:
                             if key in ["acceptor", "donor"] or key.startswith("acceptor_rep") or key.startswith("donor_rep"):
                                 continue
@@ -847,6 +851,8 @@ def run_grouped_classification(pos_per_grp, neg_per_grp, neither_idx, preds, tar
         for key, arr in p.items():
             if key == "neither":
                 continue
+            if key == "ssu" or key.startswith("ssu_") or key.endswith("_usage"):
+                continue
             if key == other or key.startswith(f"{other}_rep") or key.startswith(f"{other}_fold_"):
                 continue
             col = model if key in ["acceptor", "donor"] else f"{model}_{key}"
@@ -878,6 +884,8 @@ def run_binned_classification(pos_per_bin, neg_per_bin, neither_idx, preds, targ
     for model, p in preds.items():
         for key, arr in p.items():
             if key == "neither":
+                continue
+            if key == "ssu" or key.startswith("ssu_") or key.endswith("_usage"):
                 continue
             # skip wrong-target acc/don keys (incl. per-rep + per-fold)
             if key == other or key.startswith(f"{other}_rep") or key.startswith(f"{other}_fold_"):
