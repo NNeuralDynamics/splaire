@@ -24,10 +24,14 @@ DATA_MODE="${DATA_MODE:-haec}"
 SCORE_MODE="${SCORE_MODE:-$DATA_MODE}"
 
 # models to score. options (space separated):
-#   sa pang pang_v2 splaire spt merlin
-# leave as default (all 6) or pick a subset e.g. MODELS="splaire" for just splaire,
+#   sa pang pang_v2 splaire spt merlin ag
+# ag uses a separate sbatch path (score_haec_cs_ag for haec, score_sqtl_ag for the rest).
+# leave as default (all 7) or pick a subset e.g. MODELS="ag" for alphagenome only,
 # MODELS="splaire pang_v2" for two, etc.
-export MODELS="${MODELS:-sa pang pang_v2 splaire spt merlin}"
+export MODELS="${MODELS:-sa pang pang_v2 splaire spt merlin ag}"
+
+# data root used by run.sh / score.sh — must match what's in those scripts
+DATA_DIR="${DATA_DIR:-/scratch/$USER/sqtl_bench}"
 
 # set to false to skip data prep (e.g. already built)
 RUN_DATA_PREP="${RUN_DATA_PREP:-true}"
@@ -66,16 +70,53 @@ score_jids=()
 if [[ "$RUN_SCORING" == "true" ]]; then
     echo ""
     echo "=========== scoring ($SCORE_MODE) with MODELS=$MODELS ==========="
-    pre_squeue=$(squeue -u "$USER" -h -o '%i' | sort -u)
-    if [[ ${#data_jids[@]} -gt 0 ]]; then
-        dep=$(IFS=:; echo "${data_jids[*]}")
-        bash score.sh "$SCORE_MODE" --after "$dep"
-    else
-        bash score.sh "$SCORE_MODE"
+
+    # split MODELS into the score.sh-handled set and the ag-handled set
+    other_models=""
+    has_ag=false
+    for m in $MODELS; do
+        if [[ "$m" == "ag" ]]; then has_ag=true; else other_models="$other_models $m"; fi
+    done
+    other_models="${other_models# }"
+
+    # score.sh handles sa/pang/pang_v2/splaire/spt/merlin via its model loop
+    if [[ -n "$other_models" ]]; then
+        pre_squeue=$(squeue -u "$USER" -h -o '%i' | sort -u)
+        if [[ ${#data_jids[@]} -gt 0 ]]; then
+            dep=$(IFS=:; echo "${data_jids[*]}")
+            MODELS="$other_models" bash score.sh "$SCORE_MODE" --after "$dep"
+        else
+            MODELS="$other_models" bash score.sh "$SCORE_MODE"
+        fi
+        sleep 2
+        post_squeue=$(squeue -u "$USER" -h -o '%i' | sort -u)
+        score_jids+=($(comm -13 <(echo "$pre_squeue") <(echo "$post_squeue")))
     fi
-    sleep 2
-    post_squeue=$(squeue -u "$USER" -h -o '%i' | sort -u)
-    score_jids=($(comm -13 <(echo "$pre_squeue") <(echo "$post_squeue")))
+
+    # ag uses its own sbatch (per-dataset for non-haec, single for haec)
+    if [[ "$has_ag" == "true" ]]; then
+        ag_dep=""
+        [[ ${#data_jids[@]} -gt 0 ]] && ag_dep="--dependency=afterok:$(IFS=:; echo "${data_jids[*]}")"
+        case "$SCORE_MODE" in
+            haec|all)
+                jid=$(sbatch --parsable $ag_dep score_haec_cs_ag.sbatch "$DATA_DIR")
+                say "score_haec_cs_ag" "$jid"
+                score_jids+=("$jid")
+                ;;
+        esac
+        case "$SCORE_MODE" in
+            txrevise|leafcutter|ambig|all)
+                for ds in txrevise leafcutter ambig; do
+                    [[ "$SCORE_MODE" != "all" && "$SCORE_MODE" != "$ds" ]] && continue
+                    [[ -d "$DATA_DIR/$ds" ]] || continue
+                    jid=$(sbatch --parsable $ag_dep score_sqtl_ag.sbatch "$DATA_DIR/$ds")
+                    say "score_${ds}_ag" "$jid"
+                    score_jids+=("$jid")
+                done
+                ;;
+        esac
+    fi
+
     if [[ ${#score_jids[@]} -gt 0 ]]; then
         say "score jobs" "${score_jids[*]}"
     fi
