@@ -1,26 +1,34 @@
 #!/bin/bash
-# master pipeline submitter for the test bench (mane / gencode / canonical).
-# chains build_h5 -> score -> metrics via slurm afterok deps.
-# usage: edit the CONFIG block, then `bash run_all.sh`
+# submits the whole test bench in one go: build h5s, score, then metrics.
+# slurm afterok deps mean each step waits for the previous.
 #
-# pipelines per bench:
-#   STANDARD : build_${bench}.sbatch   -> score_${bench}.sbatch (splaire ref+var, spliceai, pangolin, spliceformer)
-#   AG       : build_${bench}_ag.sbatch -> 4x score_${bench}_ag.sbatch (per fold) -> merge_ag.sbatch
-#   then     : metrics.sbatch over all predictions/ outputs
+# usage: edit the config block below, then `bash run_all.sh`
+#
+# two pipelines run per benchmark:
+#   standard -> build_<bench>.sbatch then score_<bench>.sbatch
+#               (one sbatch scores splaire ref+var, spliceai, pangolin, spliceformer)
+#   ag       -> build_<bench>_ag.sbatch, then 4 per-fold alphagenome jobs, then merge
+# both feed into metrics.sbatch.
+#
+# to run only alphagenome: set PIPELINES=(ag)
+# to run only the standard bundle: set PIPELINES=(standard)
+# to run only one of splaire/spliceai/pangolin/spliceformer: skip this script
+# and submit that model's individual sbatch instead (score_<bench>.sbatch bundles
+# all four sequentially and isn't split per model).
 
 set -euo pipefail
 
 # ============================================================
-# CONFIG — edit me
+# config — edit me
 # ============================================================
 
-# where all outputs land (e.g. $OUT/mane_select/, $OUT/gencode/)
+# where outputs land (one subdir per benchmark, e.g. $OUT/mane_select/)
 OUT="${OUT:-/scratch/$USER/sphaec_out/canonical}"
 
-# reference fasta
+# reference genome
 export REF_FASTA="${REF_FASTA:-/projects/talisman/mrunyan/paper/SpHAEC/pipeline/reference/GRCh38/GRCh38.primary_assembly.genome.fa}"
 
-# conda env prefixes
+# conda envs (must already exist)
 export SPLAIRE_ENV_PREFIX="${SPLAIRE_ENV_PREFIX:-/scratch/$USER/conda_envs/splaire_env}"
 export SA_ENV_PREFIX="${SA_ENV_PREFIX:-/scratch/$USER/conda_envs/sa_env}"
 export PANG_ENV_PREFIX="${PANG_ENV_PREFIX:-/scratch/$USER/conda_envs/pang_env}"
@@ -29,17 +37,22 @@ export AG_ENV_PREFIX="${AG_ENV_PREFIX:-/scratch/$USER/conda_envs/alphagenome_env
 export AG_DATA_DIR="${AG_DATA_DIR:-/scratch/$USER/cache_home/alphagenome_data}"
 export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-/scratch/$USER/cache_home/jax_cache}"
 
-# which benchmarks to run (any subset of: mane gencode canonical)
+# benchmarks to run. options:
+#   mane      mane select canonical transcripts (gencode v39, primary chromosomes)
+#   gencode   full gencode v39 protein-coding annotation
+#   canonical canonical transcripts from gtex v8 expression-defined set
 BENCHES=(mane gencode)
 
-# which scoring pipelines to run (subset of: standard ag)
+# scoring pipelines to run. options:
+#   standard  one sbatch that scores splaire ref+var, spliceai, pangolin, spliceformer on the same h5
+#   ag        alphagenome (4 per-fold gpu jobs then a cpu merge into one parquet)
 PIPELINES=(standard ag)
 
-# AG GPU partition
+# alphagenome gpu partition (override if your cluster names differ)
 GPU_GRES_AG="${GPU_GRES_AG:-gpu:a100:1}"
 
 # ============================================================
-# don't edit below
+# below this line: script logic
 # ============================================================
 
 cd "$(dirname "$0")"
@@ -67,7 +80,7 @@ run_bench() {
             build_jid=$(submit "build_${bench}.sbatch" "$bench_out")
             say "build_${bench}" "$build_jid"
         else
-            say "build_${bench}" "SKIP (h5 exists)"
+            say "build_${bench}" "skip (h5 exists)"
         fi
         local dep=""
         [[ -n "$build_jid" ]] && dep="--dependency=afterok:$build_jid"
@@ -84,11 +97,11 @@ run_bench() {
             ag_build_jid=$(submit "build_${bench}_ag.sbatch" "$bench_out")
             say "build_${bench}_ag" "$ag_build_jid"
         else
-            say "build_${bench}_ag" "SKIP (h5 exists)"
+            say "build_${bench}_ag" "skip (h5 exists)"
         fi
         local dep=""
         [[ -n "$ag_build_jid" ]] && dep="--dependency=afterok:$ag_build_jid"
-        # 4 per-fold scoring jobs + 1 merge job (afterok all 4)
+        # 4 per-fold jobs, then one merge job waiting on all four
         local fold_jids=()
         for fold in fold_0 fold_1 fold_2 fold_3; do
             local fjid
@@ -107,7 +120,7 @@ run_bench() {
         score_jids+=("$mjid")
     fi
 
-    # metrics
+    # metrics waits on everything that scored
     if [[ ${#score_jids[@]} -gt 0 ]]; then
         local score_dep
         score_dep=$(IFS=:; echo "${score_jids[*]}")
@@ -123,4 +136,4 @@ for b in "${BENCHES[@]}"; do
 done
 
 echo ""
-echo "all jobs submitted. monitor: squeue -u \$USER"
+echo "submitted. watch with: squeue -u \$USER"
