@@ -1,6 +1,6 @@
 #!/bin/bash
 # submit data generation jobs to slurm
-# usage: bash run.sh [txrevise|leafcutter|haec|ambig|txrevise_pip50|leafcutter_pip50|haec_pip50|pip50|all]
+# usage: bash run.sh [txrevise|leafcutter|haec|ambig|pip50|hungarian|hungarian_gc|all]
 set -e
 
 mode=${1:-all}
@@ -8,7 +8,7 @@ mode=${1:-all}
 # config — set these before running
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 src="$(cd "$(dirname "$0")" && pwd)/src"
-data_dir="/scratch/runyan.m/sqtl_bench"
+data_dir="${DATA_DIR:-/scratch/runyan.m/sqtl_bench}"
 tpm_haec="/projects/talisman/shared-data/HAEC-185/bams/salmon.merged.gene_tpm.tsv"
 haec_sumstats="/projects/talisman/shared-data/HAEC-185/sQTL/sQTL_redo"
 haec_finemap="/scratch/runyan.m/sqtl_bench/haec/raw/HAEC185_sQTL_credible_sets_120825.tsv"
@@ -197,6 +197,69 @@ submit_haec_hungarian() {
             --out-dir $data_dir/haec_hungarian"
 }
 
+submit_txrevise_hungarian_gc() {
+    sbatch \
+        --job-name=make_txrevise_hungarian_gc \
+        --output="$logs/make_txrevise_hungarian_gc_%j.out" \
+        --error="$logs/make_txrevise_hungarian_gc_%j.err" \
+        --partition=short \
+        --time=24:00:00 \
+        --mem=120G \
+        --cpus-per-task=8 \
+        --wrap="source ~/.bashrc && conda activate $env && python $src/make_txrevise.py \
+            --cs-dir $data_dir/txrevise/raw \
+            --ge-dir $data_dir/ge/sumstats \
+            --gtf $data_dir/reference/gencode.v39.annotation.gtf.gz \
+            --tpm $tpm_gtex \
+            --match-scheme hungarian \
+            --fasta $fasta \
+            --gc-bin-size 0.05 \
+            --out-dir $data_dir/txrevise_hungarian_gc"
+}
+
+submit_leafcutter_hungarian_gc() {
+    sbatch \
+        --job-name=make_leafcutter_hungarian_gc \
+        --output="$logs/make_leafcutter_hungarian_gc_%j.out" \
+        --error="$logs/make_leafcutter_hungarian_gc_%j.err" \
+        --partition=short \
+        --time=24:00:00 \
+        --mem=120G \
+        --cpus-per-task=8 \
+        --wrap="source ~/.bashrc && conda activate $env && python $src/make_leafcutter.py \
+            --cs-dir $data_dir/leafcutter/raw \
+            --pheno-dir $data_dir/leafcutter/phenotype_metadata \
+            --ge-dir $data_dir/ge/sumstats \
+            --gtf $gtf_gtex \
+            --tpm $tpm_gtex \
+            --pos-pip 0.5 \
+            --match-scheme hungarian \
+            --fasta $fasta \
+            --gc-bin-size 0.05 \
+            --out-dir $data_dir/leafcutter_hungarian_gc"
+}
+
+submit_haec_hungarian_gc() {
+    sbatch \
+        --job-name=make_haec_hungarian_gc \
+        --output="$logs/make_haec_hungarian_gc_%j.out" \
+        --error="$logs/make_haec_hungarian_gc_%j.err" \
+        --partition=short \
+        --time=24:00:00 \
+        --mem=80G \
+        --cpus-per-task=4 \
+        --wrap="source ~/.bashrc && conda activate $env && python $src/make_haec.py \
+            --input-dir $haec_sumstats \
+            --finemapping $haec_finemap \
+            --intron-dir $haec_intron_dir \
+            --gtf $gtf_haec \
+            --tpm $tpm_haec \
+            --match-scheme hungarian \
+            --fasta $fasta \
+            --gc-bin-size 0.05 \
+            --out-dir $data_dir/haec_hungarian_gc"
+}
+
 submit_ambig() {
     sbatch \
         --job-name=make_ambig \
@@ -230,6 +293,15 @@ case "$mode" in
         submit_leafcutter_hungarian
         submit_haec_hungarian
         ;;
+    txrevise_hungarian_gc)   submit_txrevise_hungarian_gc ;;
+    leafcutter_hungarian_gc) submit_leafcutter_hungarian_gc ;;
+    haec_hungarian_gc)       submit_haec_hungarian_gc ;;
+    hungarian_gc)
+        echo "submitting hungarian+gc matching jobs..."
+        submit_txrevise_hungarian_gc
+        submit_leafcutter_hungarian_gc
+        submit_haec_hungarian_gc
+        ;;
     pip50)
         echo "submitting pip50 matching jobs..."
         jid_tx=$(submit_txrevise_pip50 | grep -o '[0-9]*')
@@ -250,8 +322,35 @@ case "$mode" in
         submit_ambig
         echo ""
         ;;
+    covariates)
+        echo "submitting covariate computation jobs..."
+        for ds in leafcutter_hungarian txrevise_hungarian haec_hungarian \
+                  leafcutter_hungarian_gc txrevise_hungarian_gc haec_hungarian_gc; do
+            # pick cs-dir and tpm based on dataset
+            cs_flag="" tpm_flag=""
+            case "$ds" in
+                leafcutter*) cs_flag="--cs-dir $data_dir/leafcutter/raw"; tpm_flag="--tpm $tpm_gtex" ;;
+                txrevise*)   cs_flag="--cs-dir $data_dir/txrevise/raw"; tpm_flag="--tpm $tpm_gtex" ;;
+                haec*)       tpm_flag="--tpm $tpm_haec" ;;
+            esac
+            sbatch \
+                --job-name="cov_${ds}" \
+                --output="$logs/cov_${ds}_%j.out" \
+                --error="$logs/cov_${ds}_%j.err" \
+                --partition=short \
+                --time=4:00:00 \
+                --mem=32G \
+                --cpus-per-task=2 \
+                --wrap="source ~/.bashrc && conda activate $env && python $src/compute_covariates.py \
+                    --dataset $ds \
+                    --data-dir $data_dir \
+                    --fasta $fasta \
+                    $tpm_flag $cs_flag"
+            echo "  submitted $ds"
+        done
+        ;;
     *)
-        echo "usage: bash run.sh [txrevise|leafcutter|haec|ambig|txrevise_pip50|leafcutter_pip50|haec_pip50|pip50|all]"
+        echo "usage: bash run.sh [txrevise|leafcutter|haec|ambig|pip50|hungarian|hungarian_gc|covariates|all]"
         exit 1
         ;;
 esac

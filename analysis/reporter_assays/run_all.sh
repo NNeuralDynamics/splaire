@@ -37,7 +37,8 @@ export NT_ENV_PREFIX="${NT_ENV_PREFIX:-/scratch/$USER/conda_envs/nt_env}"
 #   compass_minigene     compass deep mutagenesis on a minigene exon (Braun 2024)
 #   opensplice_genome    opensplice genomic context (Liao 2024)
 #   opensplice_minigene  opensplice minigene context (Liao 2024)
-ASSAYS=(vex mfass)
+# override from env, e.g. `ASSAYS="vex" bash run_all.sh`
+read -ra ASSAYS <<< "${ASSAYS:-vex mfass}"
 
 # models to score. options:
 #   splaire   splaire ref + var (cross-tissue mean splicing model, both ref-input + var-input variants)
@@ -49,7 +50,8 @@ ASSAYS=(vex mfass)
 #   merlin    merlin (mlm-finetuned splicing model)
 #   nt        nucleotide transformer
 #   segnt     segmentnt
-MODELS=(splaire sa pang pang_v2 spt ag)
+# override from env, e.g. `MODELS="ag" bash run_all.sh`
+read -ra MODELS <<< "${MODELS:-splaire sa pang pang_v2 spt ag}"
 
 # ============================================================
 # below this line: script logic

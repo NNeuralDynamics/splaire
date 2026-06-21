@@ -33,7 +33,8 @@ export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-/scratch/$USER/ca
 #   mane      mane select canonical transcripts (gencode v39, primary chromosomes)
 #   gencode   full gencode v39 protein-coding annotation
 #   canonical canonical transcripts from gtex v8 expression-defined set
-BENCHES=(mane gencode)
+# override from env, e.g. `BENCHES="mane" bash run_all.sh`
+read -ra BENCHES <<< "${BENCHES:-mane gencode}"
 
 # models to run. options:
 #   splaire   splaire ref + var (cross-tissue mean splicing, both ref-input + var-input)
@@ -41,7 +42,8 @@ BENCHES=(mane gencode)
 #   pang      pangolin (v1)
 #   spt       spliceformer
 #   ag        alphagenome (4 per-fold gpu jobs then merge)
-MODELS=(splaire sa pang spt ag)
+# override from env, e.g. `MODELS="ag" bash run_all.sh`
+read -ra MODELS <<< "${MODELS:-splaire sa pang spt ag}"
 
 # alphagenome gpu partition (override if your cluster names differ)
 GPU_GRES_AG="${GPU_GRES_AG:-gpu:a100:1}"
@@ -89,7 +91,7 @@ run_bench() {
         [[ -n "$build_jid" ]] && dep="--dependency=afterok:$build_jid"
         local models_csv="${standard_models[*]}"
         local sjid
-        sjid=$(sbatch --parsable $dep --export=ALL,MODELS="$models_csv" \
+        sjid=$(sbatch --parsable $dep "--export=ALL,MODELS=$models_csv" \
             "score_${bench}.sbatch" "$bench_out")
         say "score_${bench} (${models_csv// /,})" "$sjid"
         score_jids+=("$sjid")

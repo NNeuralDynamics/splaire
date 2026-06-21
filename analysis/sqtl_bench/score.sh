@@ -15,7 +15,7 @@ fi
 # config — set these before running
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 src="$(cd "$(dirname "$0")" && pwd)/src"
-data_dir="/scratch/runyan.m/sqtl_bench"
+data_dir="${DATA_DIR:-/scratch/runyan.m/sqtl_bench}"
 spt_dir="/projects/talisman/mrunyan/other_models/SpliceTransformer"
 
 # derived from repo
