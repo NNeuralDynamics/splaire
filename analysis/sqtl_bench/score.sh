@@ -30,7 +30,28 @@ logs="$data_dir/logs"
 mkdir -p "$logs"
 
 # conda environments per model
-declare -A envs=([sa]=sa_env [pang]=pang_env [pang_v2]=pang_env [splaire]=splaire_env [spt]=spt-test)
+declare -A envs=(
+    [sa]=sa_env
+    [pang]=pang_env
+    [pang_v2]=pang_env
+    [splaire]=splaire_env
+    [spt]=spt-test
+    [merlin]=/scratch/runyan.m/conda_envs/merlin_env_py311
+)
+
+# gpu resource per model (merlin needs A100 for flash_attn 2.8)
+declare -A gres=(
+    [sa]=gpu:v100-sxm2:1
+    [pang]=gpu:v100-sxm2:1
+    [pang_v2]=gpu:v100-sxm2:1
+    [splaire]=gpu:v100-sxm2:1
+    [spt]=gpu:v100-sxm2:1
+    [merlin]=gpu:a100:1
+)
+
+# merlin checkpoints
+merlin_cls_ckpt="$repo_root/analysis/other_models/MERLIN/Spliceformer/MERLIN/best_model_10k_variant_finetune_headshutoff_clsweighted_biggerhead_cls.pth"
+merlin_reg_ckpt="$repo_root/analysis/other_models/MERLIN/Spliceformer/MERLIN/best_model_10k_variant_finetune_headshutoff_clsweighted_biggerhead_reg.pth"
 
 score_dataset() {
     local dataset="$1"
@@ -40,7 +61,9 @@ score_dataset() {
     local score_dir="$data_dir/$dataset/scores"
     mkdir -p "$score_dir"
 
-    for model in sa pang pang_v2 splaire spt; do
+    # optional MODELS env var picks a subset; defaults to all six
+    local MODELS_TO_RUN="${MODELS:-sa pang pang_v2 splaire spt merlin}"
+    for model in $MODELS_TO_RUN; do
         local env="${envs[$model]}"
         local cmds=""
         local need_run=false
@@ -86,6 +109,7 @@ score_dataset() {
                         script="score_pang.py"
                         extra="--v2"
                     fi
+                    [ "$model" = "merlin" ] && extra="--checkpoint-cls $merlin_cls_ckpt --checkpoint-reg $merlin_reg_ckpt"
 
                     cmds="${cmds}python $script $vcf $fasta $out_file $extra"
                 fi
@@ -96,7 +120,7 @@ score_dataset() {
             sbatch $DEP --job-name="${model}_${dataset}" \
                 --output="$logs/${model}_${dataset}_%j.out" \
                 --error="$logs/${model}_${dataset}_%j.err" \
-                --partition=${GPU_PARTITION:-gpu} --gres=gpu:v100-sxm2:1 --mem=64G --time=${GPU_TIME:-8:00:00} --cpus-per-task=4 \
+                --partition=${GPU_PARTITION:-gpu} --gres="${gres[$model]}" --mem=64G --time=${GPU_TIME:-8:00:00} --cpus-per-task=4 \
                 --wrap="source ~/.bashrc && conda activate $env && cd $src && $cmds"
             echo "  submitted ${model} for ${dataset}"
         else
@@ -157,6 +181,21 @@ score_haec_hungarian() {
 }
 
 
+score_txrevise_hungarian_gc() {
+    echo "txrevise_hungarian_gc"
+    score_dataset txrevise_hungarian_gc pos neg
+}
+
+score_leafcutter_hungarian_gc() {
+    echo "leafcutter_hungarian_gc"
+    score_dataset leafcutter_hungarian_gc pos neg
+}
+
+score_haec_hungarian_gc() {
+    echo "haec_hungarian_gc (gpu-short)"
+    GPU_PARTITION=gpu-short GPU_TIME=2:00:00 score_dataset haec_hungarian_gc pos neg
+}
+
 case "$mode" in
     txrevise)      score_txrevise ;;
     leafcutter)    score_leafcutter ;;
@@ -174,6 +213,16 @@ case "$mode" in
         score_leafcutter_hungarian
         echo ""
         score_haec_hungarian
+        ;;
+    txrevise_hungarian_gc)   score_txrevise_hungarian_gc ;;
+    leafcutter_hungarian_gc) score_leafcutter_hungarian_gc ;;
+    haec_hungarian_gc)       score_haec_hungarian_gc ;;
+    hungarian_gc)
+        score_txrevise_hungarian_gc
+        echo ""
+        score_leafcutter_hungarian_gc
+        echo ""
+        score_haec_hungarian_gc
         ;;
     pip50)
         score_txrevise_pip50

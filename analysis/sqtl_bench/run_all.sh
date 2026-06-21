@@ -4,11 +4,6 @@
 # before and after each call.
 #
 # usage: edit the config block below, then `bash run_all.sh`
-#
-# to run only one bench (e.g. haec): set DATA_MODE=haec (default)
-# to skip data prep if it's already built: RUN_DATA_PREP=false
-# to run scoring for only one model: edit score.sh's case statement or
-# submit that model's score_haec_cs_<model>.sbatch directly
 
 set -euo pipefail
 
@@ -27,6 +22,12 @@ DATA_MODE="${DATA_MODE:-haec}"
 # scoring mode — usually same as DATA_MODE. options match score.sh:
 #   haec | txrevise | leafcutter | ambig | all
 SCORE_MODE="${SCORE_MODE:-$DATA_MODE}"
+
+# models to score. options (space separated):
+#   sa pang pang_v2 splaire spt merlin
+# leave as default (all 6) or pick a subset e.g. MODELS="splaire" for just splaire,
+# MODELS="splaire pang_v2" for two, etc.
+export MODELS="${MODELS:-sa pang pang_v2 splaire spt merlin}"
 
 # set to false to skip data prep (e.g. already built)
 RUN_DATA_PREP="${RUN_DATA_PREP:-true}"
@@ -64,7 +65,7 @@ score_jids=()
 
 if [[ "$RUN_SCORING" == "true" ]]; then
     echo ""
-    echo "=========== scoring ($SCORE_MODE) ==========="
+    echo "=========== scoring ($SCORE_MODE) with MODELS=$MODELS ==========="
     pre_squeue=$(squeue -u "$USER" -h -o '%i' | sort -u)
     if [[ ${#data_jids[@]} -gt 0 ]]; then
         dep=$(IFS=:; echo "${data_jids[*]}")

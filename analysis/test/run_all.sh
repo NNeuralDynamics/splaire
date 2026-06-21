@@ -4,17 +4,9 @@
 #
 # usage: edit the config block below, then `bash run_all.sh`
 #
-# two pipelines run per benchmark:
-#   standard -> build_<bench>.sbatch then score_<bench>.sbatch
-#               (one sbatch scores splaire ref+var, spliceai, pangolin, spliceformer)
-#   ag       -> build_<bench>_ag.sbatch, then 4 per-fold alphagenome jobs, then merge
-# both feed into metrics.sbatch.
-#
-# to run only alphagenome: set PIPELINES=(ag)
-# to run only the standard bundle: set PIPELINES=(standard)
-# to run only one of splaire/spliceai/pangolin/spliceformer: skip this script
-# and submit that model's individual sbatch instead (score_<bench>.sbatch bundles
-# all four sequentially and isn't split per model).
+# splaire / sa / pang / spt run inside one bundled sbatch (score_<bench>.sbatch);
+# ag runs as 4 per-fold gpu jobs followed by a merge.
+# metrics runs after everything finishes.
 
 set -euo pipefail
 
@@ -43,10 +35,13 @@ export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-/scratch/$USER/ca
 #   canonical canonical transcripts from gtex v8 expression-defined set
 BENCHES=(mane gencode)
 
-# scoring pipelines to run. options:
-#   standard  one sbatch that scores splaire ref+var, spliceai, pangolin, spliceformer on the same h5
-#   ag        alphagenome (4 per-fold gpu jobs then a cpu merge into one parquet)
-PIPELINES=(standard ag)
+# models to run. options:
+#   splaire   splaire ref + var (cross-tissue mean splicing, both ref-input + var-input)
+#   sa        spliceai
+#   pang      pangolin (v1)
+#   spt       spliceformer
+#   ag        alphagenome (4 per-fold gpu jobs then merge)
+MODELS=(splaire sa pang spt ag)
 
 # alphagenome gpu partition (override if your cluster names differ)
 GPU_GRES_AG="${GPU_GRES_AG:-gpu:a100:1}"
@@ -61,6 +56,8 @@ mkdir -p logs "$OUT"
 submit() { sbatch --parsable "$@"; }
 say() { printf "  %-32s %s\n" "$1" "$2"; }
 
+want() { [[ " ${MODELS[*]} " == *" $1 "* ]]; }
+
 run_bench() {
     local bench="$1"
     local bench_label="${bench/mane/mane_select}"
@@ -73,7 +70,13 @@ run_bench() {
 
     local -a score_jids=()
 
-    if [[ " ${PIPELINES[*]} " == *" standard "* ]]; then
+    # standard pipeline (splaire / sa / pang / spt run together in one sbatch)
+    local standard_models=()
+    for m in splaire sa pang spt; do
+        want "$m" && standard_models+=("$m")
+    done
+
+    if [[ ${#standard_models[@]} -gt 0 ]]; then
         local std_h5="$bench_out/${bench_label}.h5"
         local build_jid=""
         if [[ ! -f "$std_h5" ]]; then
@@ -84,12 +87,16 @@ run_bench() {
         fi
         local dep=""
         [[ -n "$build_jid" ]] && dep="--dependency=afterok:$build_jid"
-        local sjid=$(submit $dep "score_${bench}.sbatch" "$bench_out")
-        say "score_${bench} (splaire+sa+pang+spt)" "$sjid"
+        local models_csv="${standard_models[*]}"
+        local sjid
+        sjid=$(sbatch --parsable $dep --export=ALL,MODELS="$models_csv" \
+            "score_${bench}.sbatch" "$bench_out")
+        say "score_${bench} (${models_csv// /,})" "$sjid"
         score_jids+=("$sjid")
     fi
 
-    if [[ " ${PIPELINES[*]} " == *" ag "* ]]; then
+    # alphagenome
+    if want ag; then
         local ag_h5_dir="${bench_out%/}_ag"
         local ag_h5="$ag_h5_dir/${bench_label}_ag.h5"
         local ag_build_jid=""
@@ -101,7 +108,6 @@ run_bench() {
         fi
         local dep=""
         [[ -n "$ag_build_jid" ]] && dep="--dependency=afterok:$ag_build_jid"
-        # 4 per-fold jobs, then one merge job waiting on all four
         local fold_jids=()
         for fold in fold_0 fold_1 fold_2 fold_3; do
             local fjid

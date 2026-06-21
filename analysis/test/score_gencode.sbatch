@@ -35,25 +35,37 @@ fi
 
 pred_dir="$output_dir/predictions"
 
-echo "scoring with SplAIRE..."
-conda activate splaire_env
-python "$script_dir/score_splaire.py" "$h5" "$pred_dir" --ref --var --prefix gencode_splaire --batch-size 6456
+# optional MODELS env var picks a subset; defaults to all four
+MODELS_TO_RUN="${MODELS:-splaire sa pang spt}"
+should_run() { [[ " $MODELS_TO_RUN " == *" $1 "* ]]; }
 
-echo "scoring with SpliceAI..."
-conda activate sa_env
-python "$script_dir/score_spliceai.py" "$h5" "$pred_dir/gencode_sa.parquet" --batch-size 32
+if should_run splaire; then
+    echo "scoring with SplAIRE..."
+    conda activate "${SPLAIRE_ENV_PREFIX:-/scratch/runyan.m/conda_envs/splaire_env}"
+    python "$script_dir/score_splaire.py" "$h5" "$pred_dir" --ref --var --prefix gencode_splaire --batch-size 6456
+fi
 
-echo "scoring with Pangolin..."
-conda activate pang_env
-python "$script_dir/score_pangolin.py" "$h5" "$pred_dir/gencode_pang.parquet" --batch-size 6456
+if should_run sa; then
+    echo "scoring with SpliceAI..."
+    conda activate "${SA_ENV_PREFIX:-/scratch/runyan.m/conda_envs/sa_env}"
+    python "$script_dir/score_spliceai.py" "$h5" "$pred_dir/gencode_sa.parquet" --batch-size 32
+fi
 
-echo "scoring with SpliceTransformer..."
-conda activate spt-test
-python "$script_dir/score_splicetransformer.py" "$h5" "$pred_dir/gencode_spt.parquet" --batch-size 64
+if should_run pang; then
+    echo "scoring with Pangolin..."
+    conda activate "${PANG_ENV_PREFIX:-/scratch/runyan.m/conda_envs/pang_env}"
+    python "$script_dir/score_pangolin.py" "$h5" "$pred_dir/gencode_pang.parquet" --batch-size 6456
+fi
+
+if should_run spt; then
+    echo "scoring with SpliceTransformer..."
+    conda activate "${SPT_ENV_PREFIX:-/scratch/runyan.m/conda_envs/spt_env}"
+    python "$script_dir/score_splicetransformer.py" "$h5" "$pred_dir/gencode_spt.parquet" --batch-size 64
+fi
 
 # metrics
 echo "computing metrics..."
-conda activate splaire_env
+conda activate "${SPLAIRE_ENV_PREFIX:-/scratch/runyan.m/conda_envs/splaire_env}"
 python "$script_dir/compute_metrics.py" "$pred_dir" "$output_dir/gencode_metrics.json"
 
 echo "done: $(date)"
