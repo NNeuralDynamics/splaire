@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""extract splice sites from GENCODE GTF into canonical_dataset format"""
+"""extract splice sites from GENCODE GTF into canonical_dataset format
+
+output format (tab-separated, no header):
+  gene  paralog_flag  chrom  strand  start  end  exon_ends,  exon_starts,
+
+two modes:
+  --mane-only: extract MANE_Select transcripts (one per gene)
+  default: extract all TSL=1 protein-coding exons (union per gene)
+
+paralogs are dropped on read (--paralogs file from ensembl biomart).
+"""
 
 import argparse
 import gzip

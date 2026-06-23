@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=build_gencode
+#SBATCH --job-name=build_gencode_hg19
 #SBATCH --partition=short
 #SBATCH --time=1:00:00
 #SBATCH --mem=32G
@@ -7,20 +7,19 @@
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 
-# build gencode benchmark h5 from GENCODE v45 GTF (CPU only)
-# matches the paper: TSL=1 protein-coding exons, hg38 coords, chr1/3/5/7
-# usage: sbatch build_gencode.sbatch output_dir
+# build the legacy SpliceAI 2019 hg19 canonical bench (CPU only)
+# input is data/canonical_dataset.txt, the original SpliceAI test set (hg19 coords)
+# does NOT match what the SPLAIRE paper reports — use build_gencode.sbatch for that
+# usage: sbatch build_gencode_hg19.sbatch output_dir
 
 set -eo pipefail
 
 _submit_dir="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 repo_root="$(cd "$_submit_dir/../.." && pwd)"
 
-output_dir="${1:?usage: sbatch build_gencode.sbatch output_dir}"
-genome_fasta="${REF_FASTA:?must export REF_FASTA=/path/to/GRCh38.primary_assembly.genome.fa}"
-gtf="${GENCODE_GTF:-$repo_root/pipeline/reference/GRCh38/gencode.v45.primary_assembly.annotation.gtf.gz}"
-paralogs="${PARALOGS:-$repo_root/pipeline/reference/GRCh38/paralogs_GRCh38.txt.gz}"
-
+output_dir="${1:?usage: sbatch build_gencode_hg19.sbatch output_dir}"
+genome_fasta="${HG19_FASTA:-$repo_root/pipeline/reference/GRCh37/hg19.fa}"
+sites="$repo_root/analysis/test/data/canonical_dataset.txt"
 script_dir="$repo_root/analysis/test/src"
 pipeline_dir="$repo_root/pipeline/src"
 
@@ -29,26 +28,18 @@ conda activate "${SPLAIRE_ENV_PREFIX:-/scratch/runyan.m/conda_envs/splaire_env}"
 
 mkdir -p "$output_dir" logs
 echo "output_dir: $output_dir"
-echo "gtf: $gtf"
+echo "fasta: $genome_fasta"
 echo "started: $(date)"
 
-# step 1: extract TSL=1 protein-coding sites from v45 GTF on test chroms
-sites="$output_dir/canonical_dataset_gencode.txt"
-if [ ! -f "$sites" ]; then
-    echo "extracting sites from GTF..."
-    python "$script_dir/extract_canonical_sites.py" "$gtf" "$sites" \
-        --paralogs "$paralogs" --chroms chr1 chr3 chr5 chr7
-fi
-
-# step 2: convert to enriched matrix
-matrix="$output_dir/gencode_matrix.tsv"
+# convert canonical sites to matrix (hg19 coords pass through)
+matrix="$output_dir/gencode_hg19_matrix.tsv"
 if [ ! -f "$matrix" ]; then
     echo "converting to matrix..."
     python "$script_dir/canonical_to_matrix.py" "$sites" "$matrix"
 fi
 
-# step 3: build h5
-h5="$output_dir/gencode.h5"
+# build h5 with hg19 fasta
+h5="$output_dir/gencode_hg19.h5"
 if [ ! -f "$h5" ]; then
     echo "building h5..."
     cd "$pipeline_dir"

@@ -30,9 +30,9 @@ export AG_DATA_DIR="${AG_DATA_DIR:-/scratch/$USER/cache_home/alphagenome_data}"
 export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-/scratch/$USER/cache_home/jax_cache}"
 
 # benchmarks to run. options:
-#   mane      mane select canonical transcripts (gencode v39, primary chromosomes)
-#   gencode   full gencode v39 protein-coding annotation
-#   canonical canonical transcripts from gtex v8 expression-defined set
+#   mane         MANE Select transcripts extracted from gencode v45 GTF (hg38, chr1/3/5/7)
+#   gencode      all TSL=1 protein-coding exons from gencode v45 GTF (hg38, chr1/3/5/7) — matches paper
+#   gencode_hg19 legacy SpliceAI 2019 canonical_dataset.txt (hg19, chr1/3/5/7) — different from paper
 # override from env, e.g. `BENCHES="mane" bash run_all.sh`
 read -ra BENCHES <<< "${BENCHES:-mane gencode}"
 
@@ -98,7 +98,9 @@ run_bench() {
     fi
 
     # alphagenome
-    if want ag; then
+    if want ag && [[ ! -f "build_${bench}_ag.sbatch" ]]; then
+        say "ag" "skip (no build_${bench}_ag.sbatch — AG not supported for this bench)"
+    elif want ag; then
         local ag_h5_dir="${bench_out%/}_ag"
         local ag_h5="$ag_h5_dir/${bench_label}_ag.h5"
         local ag_build_jid=""

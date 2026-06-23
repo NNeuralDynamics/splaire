@@ -274,22 +274,39 @@ sbatch compact_ag.sbatch  <input.parquet> <compacted.parquet>
 
 ### gencode
 
-scores all TSL=1 protein-coding splice sites on test chromosomes. uses `data/canonical_dataset.txt` (hg19 coordinates from SpliceAI).
+all TSL=1 protein-coding exons extracted from GENCODE v45 (hg38) on test chromosomes chr1/3/5/7. this is the canonical-transcript bench reported in the paper.
 
-requires `pipeline/reference/GRCh38/` (genome FASTA, GTF, paralogs)
+requires `pipeline/reference/GRCh38/` (genome FASTA, gencode v45 GTF, paralogs)
 
 ```bash
 cd ${REPO}/analysis/test
+sbatch build_gencode.sbatch ${OUT}/canonical/gencode    # extract sites from v45 GTF → matrix → h5
 sbatch score_gencode.sbatch ${OUT}/canonical/gencode
 ```
 
+GTF override: `GENCODE_GTF=/path/to/gencode.vNN.primary_assembly.annotation.gtf.gz`.
+
 ### mane select
 
-same but uses MANE Select transcripts. input is `data/canonical_dataset_mane_select_p.txt` (hg38)
+MANE Select transcripts (one per gene, hg38). uses the pre-baked `data/canonical_dataset_mane_select_p.txt` extracted once from gencode v45 with `--mane-only`. test chroms chr1/3/5/7/9 (chr9 dropped at metric time via the paralog-chrom filter).
 
 ```bash
+sbatch build_mane.sbatch ${OUT}/canonical/mane_select
 sbatch score_mane.sbatch ${OUT}/canonical/mane_select
 ```
+
+### gencode_hg19 (legacy SpliceAI test set)
+
+uses `data/canonical_dataset.txt`, the pre-baked SpliceAI 2019 canonical list in hg19 coordinates. kept for direct comparison with the original SpliceAI paper numbers. **not** what the SPLAIRE paper reports — use `gencode` (above) to reproduce paper numbers.
+
+requires `pipeline/reference/GRCh37/hg19.fa` (or set `HG19_FASTA=...`).
+
+```bash
+sbatch build_gencode_hg19.sbatch ${OUT}/canonical/gencode_hg19
+sbatch score_gencode_hg19.sbatch ${OUT}/canonical/gencode_hg19
+```
+
+note: AlphaGenome is not supported here (AG works in hg38 only).
 
 ### pangolin
 
