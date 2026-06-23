@@ -9,7 +9,7 @@
 #SBATCH --mem=32G
 
 source ~/.bashrc
-conda activate ${SA_ENV:-sa_env}
+conda activate "${SA_ENV_PREFIX:-/scratch/runyan.m/conda_envs/sa_env}"
 mkdir -p scripts/logs
 
 python scripts/score_sa.py --input mfass/data/mfass.h5 --output mfass/data/mfass_sa.h5

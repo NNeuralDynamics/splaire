@@ -6,7 +6,7 @@
 # usage: edit the config block below, then `bash run_all.sh`
 #
 # to run only one model: set MODELS=(splaire) etc — pick any subset of
-#   splaire sa pang pang_v2 spt ag merlin nt segnt
+#   splaire sa pang pang_v2 spt ag merlin merlin_mlm nt segnt
 # to run only one assay: set ASSAYS=(vex)
 #
 # metrics for reporter_assays live in analysis.qmd (jupyter notebook), not an sbatch.
@@ -28,6 +28,7 @@ export AG_ENV_PREFIX="${AG_ENV_PREFIX:-/scratch/$USER/conda_envs/alphagenome_env
 export AG_DATA_DIR="${AG_DATA_DIR:-/scratch/$USER/cache_home/alphagenome_data}"
 export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-/scratch/$USER/cache_home/jax_cache}"
 export MERLIN_ENV_PREFIX="${MERLIN_ENV_PREFIX:-/scratch/$USER/conda_envs/merlin_env}"
+export MERLIN_MLM_CKPT="${MERLIN_MLM_CKPT:-/projects/talisman/mrunyan/paper/SpHAEC/analysis/other_models/MERLIN/AdarEditingPrediction/Models/model_MLM_final_data_sp.pth}"
 export NT_ENV_PREFIX="${NT_ENV_PREFIX:-/scratch/$USER/conda_envs/nt_env}"
 
 # assays to score. options:
@@ -46,10 +47,11 @@ read -ra ASSAYS <<< "${ASSAYS:-vex mfass}"
 #   pang      pangolin v1 (per-tissue p_splice + usage heads)
 #   pang_v2   pangolin v2
 #   spt       spliceformer (per-tissue usage heads)
-#   ag        alphagenome
-#   merlin    merlin (mlm-finetuned splicing model)
-#   nt        nucleotide transformer
-#   segnt     segmentnt
+#   ag         alphagenome
+#   merlin     merlin (splicing-finetuned, cls + reg heads)
+#   merlin_mlm merlin MLM zero-shot (foundation-model baseline, single LLR at variant)
+#   nt         nucleotide transformer
+#   segnt      segmentnt
 # override from env, e.g. `MODELS="ag" bash run_all.sh`
 read -ra MODELS <<< "${MODELS:-splaire sa pang pang_v2 spt ag}"
 

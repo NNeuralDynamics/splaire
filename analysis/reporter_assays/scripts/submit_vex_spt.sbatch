@@ -9,7 +9,7 @@
 #SBATCH --mem=32G
 
 source ~/.bashrc
-conda activate ${SPT_ENV:-spt-test}
+conda activate "${SPT_ENV_PREFIX:-/scratch/runyan.m/conda_envs/spt_env}"
 mkdir -p scripts/logs
 
 python scripts/score_spt.py --input vex_seq/data/vex_seq.h5 --output vex_seq/data/vex_seq_spt.h5

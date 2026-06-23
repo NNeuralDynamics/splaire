@@ -37,6 +37,7 @@ declare -A envs=(
     [splaire]=splaire_env
     [spt]=spt-test
     [merlin]=/scratch/runyan.m/conda_envs/merlin_env_py311
+    [merlin_mlm]=/scratch/runyan.m/conda_envs/merlin_env_py311
 )
 
 # gpu resource per model (merlin needs A100 for flash_attn 2.8)
@@ -47,11 +48,13 @@ declare -A gres=(
     [splaire]=gpu:v100-sxm2:1
     [spt]=gpu:v100-sxm2:1
     [merlin]=gpu:a100:1
+    [merlin_mlm]=gpu:a100:1
 )
 
 # merlin checkpoints
 merlin_cls_ckpt="$repo_root/analysis/other_models/MERLIN/Spliceformer/MERLIN/best_model_10k_variant_finetune_headshutoff_clsweighted_biggerhead_cls.pth"
 merlin_reg_ckpt="$repo_root/analysis/other_models/MERLIN/Spliceformer/MERLIN/best_model_10k_variant_finetune_headshutoff_clsweighted_biggerhead_reg.pth"
+merlin_mlm_ckpt="${MERLIN_MLM_CKPT:-$repo_root/analysis/other_models/MERLIN/AdarEditingPrediction/Models/model_MLM_final_data_sp.pth}"
 
 score_dataset() {
     local dataset="$1"
@@ -61,7 +64,7 @@ score_dataset() {
     local score_dir="$data_dir/$dataset/scores"
     mkdir -p "$score_dir"
 
-    # optional MODELS env var picks a subset; defaults to all six
+    # optional MODELS env var picks a subset; defaults to splicing-output models
     local MODELS_TO_RUN="${MODELS:-sa pang pang_v2 splaire spt merlin}"
     for model in $MODELS_TO_RUN; do
         local env="${envs[$model]}"
@@ -110,6 +113,7 @@ score_dataset() {
                         extra="--v2"
                     fi
                     [ "$model" = "merlin" ] && extra="--checkpoint-cls $merlin_cls_ckpt --checkpoint-reg $merlin_reg_ckpt"
+                    [ "$model" = "merlin_mlm" ] && extra="--checkpoint-mlm $merlin_mlm_ckpt"
 
                     cmds="${cmds}python $script $vcf $fasta $out_file $extra"
                 fi

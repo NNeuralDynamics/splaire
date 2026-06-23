@@ -9,7 +9,7 @@
 #SBATCH --mem=32G
 
 source ~/.bashrc
-conda activate ${PANG_ENV:-pang_env}
+conda activate "${PANG_ENV_PREFIX:-/scratch/runyan.m/conda_envs/pang_env}"
 mkdir -p scripts/logs
 
 python scripts/score_pang.py --input vex_seq/data/vex_seq.h5 --output vex_seq/data/vex_seq_pang.h5

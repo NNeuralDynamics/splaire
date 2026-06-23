@@ -24,11 +24,13 @@ DATA_MODE="${DATA_MODE:-haec}"
 SCORE_MODE="${SCORE_MODE:-$DATA_MODE}"
 
 # models to score. options (space separated):
-#   sa pang pang_v2 splaire spt merlin ag
+#   sa pang pang_v2 splaire spt merlin merlin_mlm ag
+# merlin     splicing-finetuned heads (cls + reg)
+# merlin_mlm MLM zero-shot (single LLR at variant, SNVs only)
 # ag uses a separate sbatch path (score_haec_cs_ag for haec, score_sqtl_ag for the rest).
-# leave as default (all 7) or pick a subset e.g. MODELS="ag" for alphagenome only,
+# leave as default or pick a subset e.g. MODELS="ag" for alphagenome only,
 # MODELS="splaire pang_v2" for two, etc.
-export MODELS="${MODELS:-sa pang pang_v2 splaire spt merlin ag}"
+export MODELS="${MODELS:-sa pang pang_v2 splaire spt merlin merlin_mlm ag}"
 
 # data root used by run.sh / score.sh — must match what's in those scripts
 DATA_DIR="${DATA_DIR:-/scratch/$USER/sqtl_bench}"
