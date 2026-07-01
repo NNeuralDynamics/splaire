@@ -52,8 +52,13 @@ def find_prediction_files(pred_dir):
     """find parquet files matching models dict"""
     files = {}
     for pq in pred_dir.glob("*.parquet"):
+        # AG writes a raw per-position junctions parquet alongside the main
+        # prediction parquet; it has its own schema (no chrom col) and is not
+        # a model prediction file
+        if "_junctions" in pq.stem:
+            continue
         for suffix, (name, _cols) in models.items():
-            if suffix in pq.stem:
+            if pq.stem.endswith(suffix):
                 files[name] = pq
                 break
     return files
@@ -630,10 +635,12 @@ def compute_metrics(truth, preds, skip_binned=False, skip_cls=False, skip_reg=Fa
         ri = reg_indices[subset]
         site_idx = ri["site_idx"]
         y_true = ri["y_true_reg"]
-        if not splice_combined:
-            acc_idx = ri["acc_idx"]
-            don_idx = ri["don_idx"]
-            y_true_cls = ri["y_true_cls"]
+        # acc_idx/don_idx/y_true_cls used by the per-fold classification-regression
+        # branch (line ~665), which fires for AG's acceptor_fold_N / donor_fold_N
+        # entries even in splice_combined mode
+        acc_idx = ri["acc_idx"]
+        don_idx = ri["don_idx"]
+        y_true_cls = ri["y_true_cls"]
 
         results["regression"][subset] = {}
         for model, p in preds.items():

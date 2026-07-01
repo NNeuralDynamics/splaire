@@ -21,7 +21,7 @@ genome_fasta="${REF_FASTA:?must export REF_FASTA=/path/to/GRCh38.primary_assembl
 paralogs="$repo_root/analysis/test/data/paralogs.txt"
 script_dir="$repo_root/analysis/test/src"
 pipeline_dir="$repo_root/pipeline/src"
-splice_table="$repo_root/analysis/test/data/splice_table_Human.test.txt"
+splice_table="${SITES:-$repo_root/analysis/test/data/splice_table_Human.test.txt}"
 
 source ~/.bashrc
 conda activate "${SPLAIRE_ENV_PREFIX:-/scratch/runyan.m/conda_envs/splaire_env}"

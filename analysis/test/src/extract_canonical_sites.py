@@ -27,6 +27,8 @@ def main():
     parser.add_argument('--chroms', nargs='+',
                         default=[f'chr{i}' for i in range(1, 23)] + ['chrX', 'chrY'],
                         help='chromosomes to include')
+    parser.add_argument('--max-per-chrom', type=int, default=None,
+                        help='cap genes per chromosome (used for tiny test runs)')
     args = parser.parse_args()
 
     chrom_set = set(args.chroms)
@@ -44,6 +46,7 @@ def main():
     # write output
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     n_written = 0
+    per_chrom = {}
     with open(args.output, 'w') as f:
         for gene_id in sorted(genes):
             g = genes[gene_id]
@@ -59,6 +62,11 @@ def main():
             paralog_flag = '0'
             gene_start = min(min(starts), min(ends))
             gene_end = max(max(starts), max(ends))
+
+            if args.max_per_chrom is not None:
+                if per_chrom.get(g['chrom'], 0) >= args.max_per_chrom:
+                    continue
+                per_chrom[g['chrom']] = per_chrom.get(g['chrom'], 0) + 1
 
             # trailing comma matches original format
             ends_str = ','.join(str(x) for x in ends) + ','

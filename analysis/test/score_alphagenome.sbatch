@@ -41,6 +41,14 @@ script_dir="$repo_root/analysis/test/src"
 
 source ~/.bashrc
 
+# defaults so this sbatch works standalone (not just via run_all.sh). AG needs
+# these to hit local fasta+feathers instead of trying to download from GCS
+# (which requires requests+aiohttp that aren't in the AG env).
+export AG_DATA_DIR="${AG_DATA_DIR:-/scratch/$USER/cache_home/alphagenome_data}"
+export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-/scratch/$USER/cache_home/jax_cache}"
+export HF_HOME="${HF_HOME:-/scratch/$USER/cache_home/hf_home}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/scratch/$USER/cache_home/xdg_cache}"
+
 mkdir -p "$output_dir/predictions" logs
 echo "output_dir: $output_dir"
 echo "input_h5:   $input_h5"

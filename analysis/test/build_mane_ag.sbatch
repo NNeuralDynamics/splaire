@@ -17,7 +17,7 @@ repo_root="$(cd "$_submit_dir/../.." && pwd)"
 
 output_dir="${1:?usage: sbatch build_mane_ag.sbatch output_dir}"
 genome_fasta="${REF_FASTA:?must export REF_FASTA=/path/to/GRCh38.primary_assembly.genome.fa}"
-sites="$repo_root/analysis/test/data/canonical_dataset_mane_select_p.txt"
+sites="${SITES:-$repo_root/analysis/test/data/canonical_dataset_mane_select_p.txt}"
 script_dir="$repo_root/analysis/test/src"
 pipeline_dir="$repo_root/pipeline/src"
 

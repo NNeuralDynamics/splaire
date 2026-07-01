@@ -5,6 +5,7 @@
 !data/paralogs.txt
 !data/canonical_dataset.txt
 !data/canonical_dataset_mane_select_p.txt
+!data/test_subset/*.txt
 *.h5
 *.parquet
 *.json

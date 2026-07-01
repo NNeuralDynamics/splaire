@@ -16,17 +16,20 @@ data="${DATA:?must export DATA=/path/to/splice_tables}"
 
 case "$tissue" in
     haec10)
-        samplesheet="$repo/pipeline/configs/haec/haec182_samples.tsv"
-        splits="$repo/pipeline/configs/haec/haec10_splits.yaml"
+        default_samplesheet="$repo/pipeline/configs/haec/haec182_samples.tsv"
+        default_splits="$repo/pipeline/configs/haec/haec10_splits.yaml"
         ;;
     lung|brain_cortex|testis|whole_blood)
-        samplesheet="$repo/pipeline/configs/gtex/${tissue}_samples.tsv"
-        splits="$repo/pipeline/configs/gtex/${tissue}_splits.yaml"
+        default_samplesheet="$repo/pipeline/configs/gtex/${tissue}_samples.tsv"
+        default_splits="$repo/pipeline/configs/gtex/${tissue}_splits.yaml"
         ;;
     *) echo "unknown tissue: $tissue"; exit 1 ;;
 esac
 
-splice_table="$data/${tissue}_splice_table.tsv"
+# env overrides for tiny test mode
+samplesheet="${SAMPLESHEET:-$default_samplesheet}"
+splits="${SPLITS:-$default_splits}"
+splice_table="${SPLICE_TABLE:-$data/${tissue}_splice_table.tsv}"
 run_dir="$out/${tissue}_run_ag"
 mkdir -p "$run_dir" logs
 cd "$run_dir"

@@ -17,7 +17,7 @@ repo_root="$(cd "$_submit_dir/../.." && pwd)"
 
 output_dir="${1:?usage: sbatch build_deltasplice_ag.sbatch output_dir}"
 genome_fasta="$repo_root/pipeline/reference/GRCh37/hg19.fa"
-ds_data="$repo_root/analysis/other_models/DeltaSplice/data/gene_dataset.tsu.txt"
+ds_data="${SITES:-$repo_root/analysis/other_models/DeltaSplice/data/gene_dataset.tsu.txt}"
 script_dir="$repo_root/analysis/test/src"
 pipeline_dir="$repo_root/pipeline/src"
 
