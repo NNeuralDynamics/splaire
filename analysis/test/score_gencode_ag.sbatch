@@ -8,9 +8,10 @@
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 
-# score gencode with AlphaGenome (per-gene 1Mb h5).
-# usage: sbatch score_gencode_ag.sbatch output_dir
-#   output_dir = ORIGINAL benchmark dir; per-gene h5 read from sibling _ag dir.
+# score gencode with AlphaGenome.
+# usage: sbatch score_gencode_ag.sbatch output_dir [ag_seq_len]
+#   ag_seq_len 1048576 (default): read per-gene 1Mb h5 from sibling _ag dir.
+#   ag_seq_len 16384:              read shared 15k h5 from output_dir, N-padded → 16384.
 # override AG_FLAGS to keep raw per-fold per-track cols (default: averaged)
 
 set -eo pipefail
@@ -18,9 +19,14 @@ set -eo pipefail
 _submit_dir="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 repo_root="$(cd "$_submit_dir/../.." && pwd)"
 
-output_dir="${1:?usage: sbatch score_gencode_ag.sbatch output_dir}"
-ag_dir="${output_dir%/}_ag"
-h5="$ag_dir/gencode_ag.h5"
+output_dir="${1:?usage: sbatch score_gencode_ag.sbatch output_dir [ag_seq_len]}"
+ag_seq_len="${2:-1048576}"
+if [ "$ag_seq_len" = "1048576" ]; then
+    ag_dir="${output_dir%/}_ag"
+    h5="$ag_dir/gencode_ag.h5"
+else
+    h5="$output_dir/gencode.h5"   # shared 15k h5 used by all classical models
+fi
 script_dir="$repo_root/analysis/test/src"
 ag_flags="${AG_FLAGS:-}"
 
@@ -35,13 +41,21 @@ echo "AG flags: $ag_flags"
 echo "started: $(date)"
 
 if [ ! -f "$h5" ]; then
-    echo "ERROR: $h5 not found (run build_gencode_ag.sbatch first)"
+    if [ "$ag_seq_len" = "1048576" ]; then
+        echo "ERROR: $h5 not found (run build_gencode_ag.sbatch first)"
+    else
+        echo "ERROR: $h5 not found (run build_gencode.sbatch first)"
+    fi
     exit 1
 fi
 
 pred_dir="$output_dir/predictions"
-out_parquet="$pred_dir/gencode_ag.parquet"
-python "$script_dir/score_alphagenome.py" "$h5" "$out_parquet" $ag_flags
+if [ "$ag_seq_len" = "1048576" ]; then
+    out_parquet="$pred_dir/gencode_ag.parquet"           # keep legacy name for native mode
+else
+    out_parquet="$pred_dir/gencode_ag_${ag_seq_len}.parquet"
+fi
+python "$script_dir/score_alphagenome.py" "$h5" "$out_parquet" --ag-seq-len "$ag_seq_len" $ag_flags
 
 if [[ " $ag_flags " == *" --no-merge "* ]] && [[ " $ag_flags " != *" --folds "* ]]; then
     cd "$_submit_dir"

@@ -51,7 +51,14 @@ try:
 except ImportError:
     from alphagenome.data import dna_output
 
-AG_SEQ_LEN = 2**20
+AG_SEQ_LEN = 2**20            # native 1 Mb (per-gene h5)
+AG_SEQ_LEN_SHORT = 16384      # 8 * 2048, shared 15k h5 mode (N-padded 692 each side)
+INPUT_LEN_SHORT = 15000       # shared h5 window
+OUTPUT_LEN_SHORT = 5000       # center label window
+PAD_SHORT = (AG_SEQ_LEN_SHORT - INPUT_LEN_SHORT) // 2                       # 692
+CENTER_START_SHORT = PAD_SHORT + (INPUT_LEN_SHORT - OUTPUT_LEN_SHORT) // 2  # 5692
+CENTER_END_SHORT = CENTER_START_SHORT + OUTPUT_LEN_SHORT                    # 10692
+
 INT_TO_BASE = np.array(['N', 'A', 'C', 'G', 'T'])
 ACC_CH = 1
 DON_CH = 0
@@ -283,6 +290,119 @@ def score_one_fold_streaming(model, h5_path, entry_keys, fold, fold_path,
     return n_ssu, n_sj, ssu_names, jx_names
 
 
+def score_one_fold_chunked(model, h5_path, chunk_ids, fold, fold_path, requested):
+    """16384 mode: read shared h5 X{n}/Y{n}/GC{n} chunks, N-pad 15000→16384,
+    predict, slice center 5000 [5692:10692], stream to parquet.
+    junctions disabled — too little context at 15k for pairing to make sense."""
+    writer = AsyncParquetWriter(fold_path)
+    n_ssu = 0
+    ssu_names = None
+
+    t_h5 = t_predict = t_post = t_write = 0.0
+    t_fold_start = time.perf_counter()
+    last_log = t_fold_start
+    LOG_INTERVAL_S = 30
+
+    with h5py.File(h5_path, "r") as fin:
+        pbar = tqdm(chunk_ids, desc=f"  {fold}", file=sys.stdout, mininterval=10)
+        it_seen = 0
+        for chunk in pbar:
+            x_chunk = fin[f"X{chunk}"][:]     # (nw, 15000, 4)
+            y_chunk = fin[f"Y{chunk}"][:]     # (nw, 5000, 4)
+            gc_chunk = fin[f"GC{chunk}"][:]   # (nw, 5000) structured
+            nw = x_chunk.shape[0]
+
+            for wi in range(nw):
+                t0 = time.perf_counter()
+                # (15000, 4) one-hot → char string, then N-pad to 16384
+                idx = np.argmax(x_chunk[wi], axis=-1)
+                # non-hot positions (all-zero rows) → N; but argmax on all-zero returns 0 → 'N' via INT_TO_BASE
+                has_base = x_chunk[wi].sum(axis=-1) > 0
+                idx = np.where(has_base, idx + 1, 0)  # shift so 0=N, 1=A..
+                seq_str = ''.join(INT_TO_BASE[idx])
+                seq_str = 'N' * PAD_SHORT + seq_str + 'N' * PAD_SHORT
+                t1 = time.perf_counter()
+
+                out = model.predict_sequence(
+                    sequence=seq_str,
+                    organism=dna_model.Organism.HOMO_SAPIENS,
+                    requested_outputs=requested,
+                    ontology_terms=None,
+                )
+                t2 = time.perf_counter()
+
+                ss = out.splice_sites.values                                       # (16384, 2)
+                su = out.splice_site_usage.values                                  # (16384, n_ssu)
+                acc = ss[CENTER_START_SHORT:CENTER_END_SHORT, ACC_CH].astype(np.float32)
+                don = ss[CENTER_START_SHORT:CENTER_END_SHORT, DON_CH].astype(np.float32)
+                ssu = su[CENTER_START_SHORT:CENTER_END_SHORT].astype(np.float32)
+
+                if n_ssu == 0:
+                    n_ssu = ssu.shape[1]
+                    ssu_names = list(out.splice_site_usage.metadata['name'].values)
+
+                gc_w = gc_chunk[wi]           # (5000,) structured
+                y_w = y_chunk[wi]             # (5000, 4)
+                data = {
+                    'chrom':      gc_w['chrom'].astype(np.int8),
+                    'pos':        gc_w['position'].astype(np.int32),
+                    'strand':     gc_w['strand'].astype(np.int8),
+                    'y_acceptor': y_w[:, 1].astype(np.float32),
+                    'y_donor':    y_w[:, 2].astype(np.float32),
+                    'y_ssu':      y_w[:, 3].astype(np.float32),
+                    f'acceptor_{fold}': acc,
+                    f'donor_{fold}':    don,
+                }
+                for t in range(n_ssu):
+                    data[f'ssu_{fold}_track_{t}'] = ssu[:, t]
+                t3 = time.perf_counter()
+
+                table = pa.Table.from_pydict(data)
+                table = compact_ssu_to_splice_sites(table)
+                writer.write_table(table)
+                t4 = time.perf_counter()
+
+                t_h5      += t1 - t0
+                t_predict += t2 - t1
+                t_post    += t3 - t2
+                t_write   += t4 - t3
+
+                del ss, su, acc, don, ssu, out, data, table, idx, seq_str
+                gc_mod.collect()
+                it_seen += 1
+
+                now = time.perf_counter()
+                if it_seen == 1 or now - last_log >= LOG_INTERVAL_S:
+                    total = t_h5 + t_predict + t_post + t_write
+                    print(
+                        f"  [{fold} phase] iter={it_seen} "
+                        f"decode={t_h5/it_seen*1000:.0f}ms "
+                        f"predict={t_predict/it_seen*1000:.0f}ms "
+                        f"post={t_post/it_seen*1000:.0f}ms "
+                        f"enqueue={t_write/it_seen*1000:.0f}ms "
+                        f"total={total/it_seen*1000:.0f}ms/it "
+                        f"qdepth={writer.depth()}",
+                        flush=True,
+                    )
+                    last_log = now
+
+    writer.close()
+
+    if it_seen > 0:
+        elapsed = time.perf_counter() - t_fold_start
+        total = t_h5 + t_predict + t_post + t_write
+        print(
+            f"  [{fold} done] {it_seen} windows in {elapsed:.0f}s wall, mean: "
+            f"decode={t_h5/it_seen*1000:.0f}ms "
+            f"predict={t_predict/it_seen*1000:.0f}ms "
+            f"post={t_post/it_seen*1000:.0f}ms "
+            f"enqueue={t_write/it_seen*1000:.0f}ms "
+            f"total={total/it_seen*1000:.0f}ms/it",
+            flush=True,
+        )
+    return n_ssu, 0, ssu_names, None
+
+
 def stream_merge_folds(fold_paths, output_path):
     """row-group horizontal merge of per-fold parquets.
     each per-fold parquet shares GT cols and adds its own fold-specific pred cols.
@@ -326,11 +446,20 @@ def main():
                         help="exit after scoring; do not merge per-fold parquets (run merge in CPU job)")
     parser.add_argument("--merge-only", action="store_true",
                         help="skip scoring, just merge existing per-fold temp parquets")
+    parser.add_argument("--ag-seq-len", type=int, default=AG_SEQ_LEN,
+                        choices=[AG_SEQ_LEN, AG_SEQ_LEN_SHORT],
+                        help=f"AG input length: {AG_SEQ_LEN} (native per-gene h5) "
+                             f"or {AG_SEQ_LEN_SHORT} (shared 15k h5, N-padded)")
     args = parser.parse_args()
 
     folds = [f.strip() for f in args.folds.split(",") if f.strip()]
     include_junctions = args.with_junctions
-    print(f"folds={folds}, include_junctions={include_junctions}", flush=True)
+    seq_len = args.ag_seq_len
+    is_short = seq_len == AG_SEQ_LEN_SHORT
+    if is_short and include_junctions:
+        print("WARN: junctions ignored in 16384 mode (context too short)", flush=True)
+        include_junctions = False
+    print(f"folds={folds}, ag_seq_len={seq_len}, include_junctions={include_junctions}", flush=True)
 
     out_base = args.output_parquet[:-len('.parquet')] if args.output_parquet.endswith('.parquet') \
                else args.output_parquet
@@ -359,11 +488,19 @@ def main():
         return
 
     with h5py.File(args.input_h5, "r") as fin:
-        n_entries = int(fin.attrs.get('n_entries', 0))
-        if n_entries == 0:
-            n_entries = sum(1 for k in fin.keys() if k.startswith("SEQ_"))
-        entry_keys = list(range(n_entries))
-        print(f"  {n_entries} entries", flush=True)
+        if is_short:
+            chunk_ids = sorted(
+                int(k[1:]) for k in fin.keys() if k.startswith("X") and k[1:].isdigit()
+            )
+            n_windows = sum(fin[f"X{c}"].shape[0] for c in chunk_ids)
+            print(f"  16384 mode: {len(chunk_ids)} chunks, {n_windows:,} windows", flush=True)
+            entry_keys = chunk_ids
+        else:
+            n_entries = int(fin.attrs.get('n_entries', 0))
+            if n_entries == 0:
+                n_entries = sum(1 for k in fin.keys() if k.startswith("SEQ_"))
+            entry_keys = list(range(n_entries))
+            print(f"  1Mb mode: {n_entries} gene entries", flush=True)
 
     requested = [
         dna_output.OutputType.SPLICE_SITES,
@@ -394,12 +531,12 @@ def main():
             model = dna_model.create_from_kaggle(fold, organism_settings=settings)
         print(f"  model loaded in {time.perf_counter()-t_l0:.1f}s", flush=True)
 
-        # warm-up at full length — hits jax compile cache if matching signature already cached.
+        # warm-up at scoring length — hits jax compile cache if matching signature already cached.
         # this call IS the phase the watchdog flags as "GPU idle" on a cache miss
         # (XLA compile runs cpu-side; nvidia-smi reads 0% during it).
         t_w0 = time.perf_counter()
         _ = model.predict_sequence(
-            sequence="A" * AG_SEQ_LEN,
+            sequence="A" * seq_len,
             organism=dna_model.Organism.HOMO_SAPIENS,
             requested_outputs=requested,
             ontology_terms=None,
@@ -412,10 +549,15 @@ def main():
         jx_path = f"{out_base}_{fold}_junctions_temp.parquet" if include_junctions else None
         print(f"  scoring → {fold_path}", flush=True)
 
-        _, _, ssu_names_, jx_names_ = score_one_fold_streaming(
-            model, args.input_h5, entry_keys, fold,
-            fold_path, requested, include_junctions, jx_path,
-        )
+        if is_short:
+            _, _, ssu_names_, jx_names_ = score_one_fold_chunked(
+                model, args.input_h5, entry_keys, fold, fold_path, requested,
+            )
+        else:
+            _, _, ssu_names_, jx_names_ = score_one_fold_streaming(
+                model, args.input_h5, entry_keys, fold,
+                fold_path, requested, include_junctions, jx_path,
+            )
         if ssu_names is None:
             ssu_names = ssu_names_
         if jx_names is None and jx_names_:

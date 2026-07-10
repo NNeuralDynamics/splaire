@@ -8,18 +8,25 @@
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 
-# score MANE Select with AlphaGenome (per-gene 1Mb h5).
-# usage: sbatch score_mane_ag.sbatch output_dir
-#   override AG_FLAGS to keep raw per-fold per-track cols (default: averaged)
+# score MANE Select with AlphaGenome.
+# usage: sbatch score_mane_ag.sbatch output_dir [ag_seq_len]
+#   ag_seq_len 1048576 (default): read per-gene 1Mb h5 from sibling _ag dir.
+#   ag_seq_len 16384:              read shared 15k h5 from output_dir, N-padded → 16384.
+# override AG_FLAGS to keep raw per-fold per-track cols (default: averaged)
 
 set -eo pipefail
 
 _submit_dir="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 repo_root="$(cd "$_submit_dir/../.." && pwd)"
 
-output_dir="${1:?usage: sbatch score_mane_ag.sbatch output_dir}"
-ag_dir="${output_dir%/}_ag"
-h5="$ag_dir/mane_select_ag.h5"
+output_dir="${1:?usage: sbatch score_mane_ag.sbatch output_dir [ag_seq_len]}"
+ag_seq_len="${2:-1048576}"
+if [ "$ag_seq_len" = "1048576" ]; then
+    ag_dir="${output_dir%/}_ag"
+    h5="$ag_dir/mane_select_ag.h5"
+else
+    h5="$output_dir/mane_select.h5"   # shared 15k h5 used by all classical models
+fi
 script_dir="$repo_root/analysis/test/src"
 ag_flags="${AG_FLAGS:-}"
 
@@ -34,12 +41,20 @@ echo "AG flags: $ag_flags"
 echo "started: $(date)"
 
 if [ ! -f "$h5" ]; then
-    echo "ERROR: $h5 not found (run build_mane_ag.sbatch first)"
+    if [ "$ag_seq_len" = "1048576" ]; then
+        echo "ERROR: $h5 not found (run build_mane_ag.sbatch first)"
+    else
+        echo "ERROR: $h5 not found (run build_mane.sbatch first)"
+    fi
     exit 1
 fi
 
-out_parquet="$output_dir/predictions/mane_select_ag.parquet"
-python "$script_dir/score_alphagenome.py" "$h5" "$out_parquet" $ag_flags
+if [ "$ag_seq_len" = "1048576" ]; then
+    out_parquet="$output_dir/predictions/mane_select_ag.parquet"
+else
+    out_parquet="$output_dir/predictions/mane_select_ag_${ag_seq_len}.parquet"
+fi
+python "$script_dir/score_alphagenome.py" "$h5" "$out_parquet" --ag-seq-len "$ag_seq_len" $ag_flags
 
 # if --no-merge was set AND we scored all folds (no --folds override), queue CPU-only merge
 if [[ " $ag_flags " == *" --no-merge "* ]] && [[ " $ag_flags " != *" --folds "* ]]; then
